@@ -1,0 +1,38 @@
+{
+  "name": "pdf-translate-reader",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "本地 PDF 阅读、划词翻译与 PDFMathTranslate-next 全文翻译",
+  "scripts": {
+    "sync:pdfjs": "node scripts/sync-pdfjs-assets.mjs",
+    "predev": "npm run sync:pdfjs",
+    "dev": "vite",
+    "prebuild": "npm run sync:pdfjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "node server.mjs dist 5199 --open",
+    "shortcut:desktop": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",
+    "type-check": "vue-tsc --noEmit",
+    "setup:engine": "node scripts/setup-pdf2zh-next.mjs",
+    "test:engine": "node --test tests/full-translation.test.mjs",
+    "test:reader": "node --test tests/pdf-zoom.test.mjs",
+    "verify:m1": "node .workbuddy/tools/verify-m1.mjs",
+    "audit:release": "node scripts/audit-release.mjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^6.3.289",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.1",
+    "vue-tsc": "^3.3.11"
+  },
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

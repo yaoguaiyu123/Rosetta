@@ -1,0 +1,27 @@
+# 统一换行符，避免不同系统 clone 之后出问题。
+#
+# 这条对 启动.bat 特别重要：cmd.exe 解析 LF 行尾的批处理容易出错
+# （本项目就踩过，见 README 之外的说明），必须保证它到哪都是 CRLF。
+* text=auto
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh text eol=lf
+
+# 只有真正的二进制才标 binary。注意别把 .mjs 之类的文本标进去 ——
+# 那会让 Git 放弃换行归一化和文本对比。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.wasm binary
+*.pdf binary
+
+# Preserve upstream license texts byte-for-byte, including original whitespace.
+/LICENSE -text -whitespace
+/licenses/** -text -whitespace
+/licenses/*.json text eol=lf

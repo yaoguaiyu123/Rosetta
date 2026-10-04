@@ -1,0 +1,5 @@
+# Engine versions used for the local PDF translation evaluation.
+# Full resolved dependency snapshot: .runtime/pdf2zh-next/installed-versions.txt
+pdf2zh-next==2.9.0
+babeldoc==0.6.2
+python-dotenv==1.2.4

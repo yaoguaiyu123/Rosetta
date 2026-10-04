@@ -1,0 +1,35 @@
+# ---------- 依赖与构建产物 ----------
+node_modules/
+dist/
+# public/ 里的 pdf.js 运行期资源（worker / fonts / cmaps / wasm / iccs）
+# 是由 `npm run sync:pdfjs` 从 node_modules 复制生成的，不是源文件，
+# 而且 predev / prebuild 会自动跑一次，所以不入库。
+public/
+
+# ---------- 本地配置：里面有 API Key，绝不入库 ----------
+.env
+.env.*
+!.env.example
+# 验收/截图脚本用的临时配置（test.env、shot.env 等）
+.workbuddy/tools/*.env
+
+# ---------- 运行期产物 / 临时文件 ----------
+.workbuddy/backups/
+.workbuddy/memory/
+.workbuddy/tools/*.png
+# 全文翻译验收的产物：抽出来的测试 PDF 与生成的译本
+.workbuddy/tools/*.pdf
+.workbuddy/tools/test-output/
+*.log
+npm-debug.log*
+# 可选的 PDFMathTranslate-next 环境、下载缓存和人工验收译本
+.runtime/
+tempPDF/
+tmp/
+__pycache__/
+
+# ---------- 编辑器与系统 ----------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
