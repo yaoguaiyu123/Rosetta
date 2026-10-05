@@ -33,3 +33,6 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Portable release archives and extracted packages
+release/

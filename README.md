@@ -13,6 +13,14 @@
 - **本地启动**：Windows 可通过启动脚本或桌面快捷方式打开，无需注册账号。
 - **模型配置**：使用自己的 API Key，支持 DeepSeek 和其他 OpenAI 兼容接口。
 
+## 普通用户：下载便携版
+
+打开 [GitHub Releases](https://github.com/yaoguaiyu123/Rosetta/releases)，下载 Windows x64 完整便携版 ZIP，完整解压后双击 **Rosetta.exe**。不需要安装 Node.js、uv 或 Python，模型和字体已包含；首次使用在设置中填写自己的 API Key 和模型即可。
+
+便携版仍通过浏览器阅读，翻译需要联网调用你配置的模型服务。配置和缓存保存在解压目录的 data，译本目录可在设置中修改。退出启动窗口或托盘中的 Rosetta 会停止服务。详见 [便携版说明](docs/portable-release.md)。
+
+以下为开发者从源码运行的方式。
+
 ## 环境要求
 
 - 推荐 **Node.js 24 LTS**，最低 22.13.0（由当前 PDF.js 和构建工具决定）。

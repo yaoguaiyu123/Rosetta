@@ -175,8 +175,13 @@ const { map: initialEnv } = readEnvFile()
 const args = CLI_ARGS
 const openBrowser = args.includes('--open')
 // --env 后面跟的是值，不是位置参数，要排除掉
-const envValueIndex = args.indexOf('--env') >= 0 ? args.indexOf('--env') + 1 : -1
-const positional = args.filter((a, i) => !a.startsWith('--') && i !== envValueIndex)
+const valueIndexes = ['--env', '--ready-file'].map(flag => args.indexOf(flag)).filter(i => i >= 0).map(i => i + 1)
+const positional = args.filter((a, i) => !a.startsWith('--') && !valueIndexes.includes(i))
+const readyFileIndex = args.indexOf('--ready-file')
+const readyFile = readyFileIndex >= 0 ? args[readyFileIndex + 1] : null
+function reportReady(url, reused) {
+  if (readyFile) writeFileSync(resolve(SCRIPT_DIR, readyFile), JSON.stringify({ url, pid: reused ? null : process.pid, reused }))
+}
 
 const root = resolve(positional[0] ?? 'dist')
 // 优先级：命令行 > .env 里的 PORT > 5199
@@ -385,6 +390,7 @@ async function main() {
     const url = `http://127.0.0.1:${startPort}/`
     console.log(`[server] ${startPort} 端口上已经有一个本应用的实例在运行。`)
     console.log(`[server] 直接使用它：${url}`)
+    reportReady(url, true)
     if (openBrowser) openUrl(url)
     return
   }
@@ -410,6 +416,7 @@ async function main() {
       console.log('[server] 说明：端口变了不影响你的 API Key —— 配置以 .env 文件为准')
     }
     console.log('[server] 关掉这个窗口即停止服务')
+    reportReady(url, false)
     if (openBrowser) openUrl(url)
     return
   }

@@ -16,14 +16,15 @@ async function fixture(t, options = {}) {
   const temporaryRoot = resolve('tmp')
   mkdirSync(temporaryRoot, {recursive:true})
   const root = mkdtempSync(join(temporaryRoot, 'engine-test-'))
-  const python = join(root,'.runtime/pdf2zh-next/.venv',process.platform==='win32'?'Scripts/python.exe':'bin/python')
+  const python = options.portable ? join(root,'.runtime/portable-python/python.exe')
+    : join(root,'.runtime/pdf2zh-next/.venv',process.platform==='win32'?'Scripts/python.exe':'bin/python')
   mkdirSync(resolve(python,'..'),{recursive:true}); writeFileSync(python,'test placeholder')
   const output=join(root,'output')
   const config={apiKey:'local-test-key',model:'local-test',outputDir:output}
   const children=[]
   let launches=0
   let mode='success'
-  function spawnProcess(command) {
+  function spawnProcess(command, args, spawnOptions) {
     if(command==='taskkill') {
       const controller=new EventEmitter()
       queueMicrotask(()=>{for(const child of children) if(child.running){child.running=false;child.emit('close',1)}})
@@ -34,6 +35,7 @@ async function fixture(t, options = {}) {
     child.pid=10000+launches;child.running=true
     child.stdout=new PassThrough();child.stderr=new PassThrough();child.stdin=new PassThrough()
     child.kill=()=>{if(child.running){child.running=false;child.emit('close',1)}}
+    child.command=command;child.spawnOptions=spawnOptions
     children.push(child)
     let payload=''
     child.stdin.on('data',c=>payload+=c)
@@ -135,4 +137,19 @@ test('an unusable custom output directory falls back to the user folder',async t
   assert.equal(result.status,'done');assert.equal(result.result.fallbackUsed,true)
   assert.equal(resolve(result.result.mono.path,'..'),join(testHome,'PDF译文'))
   assert.ok(existsSync(result.result.dual.path))
+})
+
+
+test('portable runtime selects bundled Python and keeps jobs/cache/temp paths inside package', {skip:process.platform!=='win32'}, async t=>{
+  const f=await fixture(t,{portable:true})
+  const initial=await f.create();const result=await f.wait(initial.data.id)
+  assert.equal(result.status,'done')
+  const child=f.children[0]
+  assert.equal(child.command,join(f.root,'.runtime/portable-python/python.exe'))
+  assert.equal(child.spawnOptions.env.PYTHONNOUSERSITE,'1')
+  assert.equal(child.spawnOptions.env.PYTHONPATH,'')
+  assert.equal(child.spawnOptions.env.ROSETTA_DATA_DIR,join(f.root,'data'))
+  assert.equal(child.spawnOptions.env.TEMP,join(f.root,'data','tmp'))
+  assert.equal(child.spawnOptions.env.PYTHONHOME,join(f.root,'.runtime/portable-python'))
+  assert.ok(child.request.input.startsWith(join(f.root,'data','jobs')))
 })

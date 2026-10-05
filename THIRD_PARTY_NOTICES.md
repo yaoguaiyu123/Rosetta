@@ -31,7 +31,7 @@ PDF.js 总体使用 Apache-2.0，随附资源还保留各自声明。原始许�
 
 ## 版面模型、字体与文档
 
-全文引擎下载的版面权重来自 [DocLayout-YOLO-DocStructBench ONNX](https://huggingface.co/wybxc/DocLayout-YOLO-DocStructBench-onnx)，字体等资源来自 [BabelDOC-Assets](https://github.com/funstory-ai/BabelDOC-Assets)。它们没有随本源码仓库发布，不能因引擎的软件许可推定权重或字体也采用同一许可。重新分发这些资源前，请核对具体文件来源、许可和版权声明；本次没有对权重的独立分发许可作出结论。
+全文引擎下载的版面权重来自 [DocLayout-YOLO-DocStructBench ONNX](https://huggingface.co/wybxc/DocLayout-YOLO-DocStructBench-onnx)，字体等资源来自 [BabelDOC-Assets](https://github.com/funstory-ai/BabelDOC-Assets)。这些大文件不纳入 Git 源码仓库。完整便携发行包包含未经修改的资源：已核实该 ONNX 模型卡声明 Apache-2.0；多数字体采用 SIL OFL 1.1，MaruBuri 使用 Naver 字体条款。便携包保留各字体嵌入版权和保留名称、原始许可、模型卡、Adobe CMap 与 tiktoken 许可，详见包内 licenses/PORTABLE-NOTICES.md。不能将引擎的软件许可替代资源各自的许可。
 
 用户导入的论文、译本及翻译接口属于各自权利人或服务商，不纳入本项目原创代码授权。本仓库不附带论文和评估译本。
 

@@ -59,8 +59,12 @@ function upload(req) {
 export function createFullTranslationService({ root, readConfig, spawnProcess = spawn, outputDirectoryResolver = resolveOutputDir }) {
   const jobs = new Map()
   let active = null
-  const python = join(root, '.runtime', 'pdf2zh-next', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
-  const jobRoot = join(root, '.runtime', 'pdf2zh-next', 'jobs')
+  const portablePython = join(root, '.runtime', 'portable-python', 'python.exe')
+  const python = process.platform === 'win32' && existsSync(portablePython) ? portablePython
+    : join(root, '.runtime', 'pdf2zh-next', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+  const portable = python === portablePython
+  if (portable) mkdirSync(join(root, 'data', 'tmp'), { recursive: true })
+  const jobRoot = portable ? join(root, 'data', 'jobs') : join(root, '.runtime', 'pdf2zh-next', 'jobs')
   const directories = () => [...new Set([readConfig().outputDir?.trim() ? resolve(readConfig().outputDir.trim()) : null,
     defaultOutputDir(), join(homedir(), 'Documents', 'PDF译文'), join(root, 'tempPDF')].filter(Boolean))]
 
@@ -160,7 +164,9 @@ export function createFullTranslationService({ root, readConfig, spawnProcess = 
     job.status = 'running'
     job.child = spawnProcess(python, [join(root, 'scripts', 'pdf2zh-worker.py')], {
       cwd: root, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONUTF8: '1', PYTHONUNBUFFERED: '1' },
+      env: { ...process.env, PYTHONUTF8: '1', PYTHONUNBUFFERED: '1', PYTHONNOUSERSITE: '1',
+        ...(portable ? { PYTHONHOME: join(root, '.runtime', 'portable-python'), PYTHONPATH: '',
+          ROSETTA_DATA_DIR: join(root, 'data'), TMP: join(root, 'data', 'tmp'), TEMP: join(root, 'data', 'tmp'), PYTHONDONTWRITEBYTECODE: '1' } : {}) },
     })
     let pending = ''; let result = null; let engineError = ''
     job.child.stdout.setEncoding('utf8')
