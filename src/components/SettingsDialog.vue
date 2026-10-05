@@ -128,8 +128,11 @@ function save() {
             <button class="btn" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button>
           </div>
           <p class="field__hint">
-            保存后会写进项目根目录的 <code>.env</code> 文件，所以重启服务、换端口、
-            甚至换浏览器都不会丢。这个文件只在你本机，不要提交到公开仓库。
+            在 <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">DeepSeek 开放平台</a>
+            创建自己的 API Key，粘贴后点击「测试连接」，选择可用模型并保存。翻译需要联网，费用由服务商收取。
+          </p>
+          <p class="field__hint">
+            配置保存在本机（便携版为 <code>data/settings.env</code>，源码版为 <code>.env</code>），重启后仍可使用。请勿分享含 Key 的配置文件。
           </p>
         </section>
 

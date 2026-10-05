@@ -85,17 +85,24 @@ internal sealed class Rosetta : Form {
         }
         try { if(File.Exists(Ready)) File.Delete(Ready); } catch { }
     }
+    static bool HasApiKey() {
+        try {
+            var response = new JavaScriptSerializer().Deserialize<System.Collections.Generic.Dictionary<string,object>>(Get(Address + "__config"));
+            var config = response["config"] as System.Collections.Generic.Dictionary<string,object>;
+            return config != null && config.ContainsKey("apiKey") && !String.IsNullOrWhiteSpace(config["apiKey"] as string);
+        } catch { return false; }
+    }
     void Browse() { if(Address!=null) Process.Start(new ProcessStartInfo(Address) { UseShellExecute=true }); }
     Rosetta() {
-        Text="Rosetta · 译读"; ClientSize=new Size(440,220); FormBorderStyle=FormBorderStyle.FixedDialog;
+        Text="Rosetta · 译读"; ClientSize=new Size(440,240); FormBorderStyle=FormBorderStyle.FixedDialog;
         MaximizeBox=false; StartPosition=FormStartPosition.CenterScreen;
         BackColor=Color.FromArgb(24,30,28); ForeColor=Color.FromArgb(220,232,205);
         Icon=new Icon(Path.Combine(Root,"assets","desktop","reader.ico"));
         var title=new Label { Text="Rosetta · 译读", AutoSize=true, Location=new Point(24,22), Font=new Font("Microsoft YaHei UI",17) };
-        Status=new Label { Text="正在启动…",AutoSize=false,Size=new Size(390,55),Location=new Point(24,66),Font=new Font("Microsoft YaHei UI",10) };
-        Open=new Button { Text="打开阅读器",Enabled=false,Location=new Point(24,135),Size=new Size(170,42),BackColor=Color.FromArgb(220,232,205),ForeColor=Color.FromArgb(24,30,28),FlatStyle=FlatStyle.Flat };
+        Status=new Label { Text="正在启动…",AutoSize=false,Size=new Size(390,75),Location=new Point(24,66),Font=new Font("Microsoft YaHei UI",10) };
+        Open=new Button { Text="打开阅读器",Enabled=false,Location=new Point(24,155),Size=new Size(170,42),BackColor=Color.FromArgb(220,232,205),ForeColor=Color.FromArgb(24,30,28),FlatStyle=FlatStyle.Flat };
         Open.Click+=delegate { Browse(); };
-        var exit=new Button {Text="退出",Location=new Point(210,135),Size=new Size(100,42)};
+        var exit=new Button {Text="退出",Location=new Point(210,155),Size=new Size(100,42)};
         exit.Click+=delegate { Close(); };
         Controls.AddRange(new Control[]{title,Status,Open,exit});
         Tray=new NotifyIcon {Icon=Icon,Text="Rosetta · 译读",Visible=true};
@@ -104,7 +111,7 @@ internal sealed class Rosetta : Form {
         Resize+=delegate { if(WindowState==FormWindowState.Minimized) Hide(); };
         FormClosing+=delegate { StopService(); Tray.Visible=false; Tray.Dispose(); };
         Shown+=async delegate {
-            try { await Task.Run((Action)StartService); if(!Stopping) { Status.Text="已启动。关闭浏览器后，可从这里再次打开。\n退出此窗口将停止本地服务。"; Open.Enabled=true; Browse(); } }
+            try { await Task.Run((Action)StartService); if(!Stopping) { Status.Text = HasApiKey() ? "已启动。关闭浏览器后，可从这里再次打开。\n退出此窗口将停止本地服务。" : "已启动。翻译前请在阅读器的设置中填写\n自己的 DeepSeek API Key，测试连接后保存。\n阅读 PDF 无需配置；翻译由服务商计费。"; Open.Enabled=true; Browse(); } }
             catch(Exception error) { if(!Stopping) Status.Text=error.Message; }
         };
     }

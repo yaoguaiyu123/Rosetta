@@ -15,7 +15,7 @@
 
 ## 普通用户：下载便携版
 
-打开 [GitHub Releases](https://github.com/yaoguaiyu123/Rosetta/releases)，下载 Windows x64 完整便携版 ZIP，完整解压后双击 **Rosetta.exe**。不需要安装 Node.js、uv 或 Python，模型和字体已包含；首次使用在设置中填写自己的 API Key 和模型即可。
+打开 [GitHub Releases](https://github.com/yaoguaiyu123/Rosetta/releases)，下载 Windows x64 完整便携版 ZIP，完整解压后双击 **Rosetta.exe**。不需要安装 Node.js、uv 或 Python，模型和字体已包含；首次使用时，应用会提醒填写自己的 DeepSeek API Key，并提供申请链接与「打开设置」按钮；测试连接、选择模型后保存即可。仅阅读 PDF 无需配置。
 
 便携版仍通过浏览器阅读，翻译需要联网调用你配置的模型服务。配置和缓存保存在解压目录的 data，译本目录可在设置中修改。退出启动窗口或托盘中的 Rosetta 会停止服务。详见 [便携版说明](docs/portable-release.md)。
 

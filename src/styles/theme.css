@@ -62,6 +62,11 @@ button, input { -webkit-tap-highlight-color: transparent; }
 .zoom-label { min-width: 46px; color: var(--text-1); text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
 .divider { flex: none; width: 1px; height: 19px; background: var(--border); margin: 0 5px; }
 
+/* Missing-key guidance stays compact and never blocks reading. */
+.api-setup { flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 6px 12px; background: var(--accent-soft); border-bottom: 1px solid var(--border); color: var(--text-0); font-size: 12px; }
+.api-setup > span { flex: 1 1 300px; }
+.api-setup a, .field__hint a { color: var(--accent); text-underline-offset: 3px; }
+
 /* Full-document translation. */
 .full-controls { flex: none; min-height: 40px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--border); background: var(--bg-1); flex-wrap: wrap; }
 .view-switch { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-0); }

@@ -1,6 +1,6 @@
 # 完整便携版
 
-便携版支持 Windows 10/11 x64，使用系统自带的浏览器和 .NET Framework。下载 GitHub Releases 中的 `Rosetta-版本-windows-x64-portable.zip`，完整解压到可写文件夹，再双击 Rosetta.exe。无需安装 Node.js、uv 或 Python，模型及字体已经包含。首次使用只需在应用设置填写自己的 API Key 和模型。
+便携版支持 Windows 10/11 x64，使用系统自带的浏览器和 .NET Framework。下载 GitHub Releases 中的 `Rosetta-版本-windows-x64-portable.zip`，完整解压到可写文件夹，再双击 Rosetta.exe。无需安装 Node.js、uv 或 Python，模型及字体已经包含。首次使用只需在应用设置填写自己的 API Key 和模型。未配置 Key 时，阅读器会显示「申请 API Key」链接和「打开设置」按钮，启动窗口也会提醒；填写后测试连接、选择模型并保存即可。阅读 PDF 无需配置 Key。
 
 这是浏览器阅读器配合本机启动器，不内置浏览器，不修改系统 PATH，不需要管理员权限，不注册服务或开机启动。配置、翻译缓存及任务临时文件位于解压目录的 data。译本仍默认输出到用户目录的 PDF译文，可在设置中自定义。
 
@@ -26,6 +26,7 @@
 - 测试进程 PATH 仅保留 Windows System32；不依赖机器上安装的 Node.js、Python 或 uv。
 - 182 个模型、字体、CMap 和 tokenizer 资源全部通过 SHA3-256 校验。
 - 实际 PDFMathTranslate-next 引擎在阻止非本机网络连接的条件下，通过本地假接口完成测试。生成 1 页中文 mono 和 1 页 dual，dual 宽度是 mono 的两倍，mono 可提取中文文字。
+- 空 Key 时两种阅读模式均显示配置提示；按钮可打开设置，保存 Key 后提示消失。引导验收没有请求外部翻译接口。
 - 现有全文任务与缩放回归测试通过，新增便携路径测试通过；类型检查通过。
 - 已检查当前配置 API Key 未进入源码或本地 Git 对象；归档前再次扫描完整发行目录。
 

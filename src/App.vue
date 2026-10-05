@@ -406,6 +406,12 @@ onBeforeUnmount(() => {
       @mode="setMode"
     />
 
+    <aside v-if="configReady && !hasApiKey" class="api-setup" role="status" aria-label="翻译配置提示">
+      <span>翻译前请填写自己的 DeepSeek API Key；阅读 PDF 无需配置。</span>
+      <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">申请 API Key</a>
+      <button class="btn btn--primary btn--sm" @click="settingsOpen = true">打开设置</button>
+    </aside>
+
     <section v-if="mode === 'full'" class="full-controls" aria-label="全文译本">
       <div class="view-switch" aria-label="译本显示方式">
         <button :aria-pressed="fullView === 'dual'" :class="{ active: fullView === 'dual' }" @click="fullView = 'dual'">中英对照</button>
