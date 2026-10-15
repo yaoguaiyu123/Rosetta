@@ -21,11 +21,17 @@ import type { DocInfo, SelectionPayload, Settings } from './types'
 import type { FullViewMode, ReaderMode } from './types'
 import { createFullTranslation, FULL_TRANSLATION_PAGE_LIMIT, type FullTranslationProgress } from './lib/fullTranslationClient'
 import { findSavedTranslation, loadSavedTranslation, type SavedTranslation } from './lib/savedTranslation'
+import type { PdfFileHandle } from './lib/fileAccess'
+import { modelProvider, PROVIDER_PRESETS } from './lib/providers'
 import { nextPdfZoom } from './lib/pdfZoom'
 
 const viewer = ref<InstanceType<typeof PdfViewer> | null>(null)
 const toolbar = ref<InstanceType<typeof AppToolbar> | null>(null)
 const translatedViewer = ref<InstanceType<typeof PdfViewer> | null>(null)
+const annotationTool = ref<'select' | 'highlight' | 'erase'>('select')
+const originalEdits = ref({ dirty: false, canUndo: false, saving: false })
+const translatedEdits = ref({ dirty: false, canUndo: false, saving: false })
+const editNotice = ref('')
 const mode = ref<ReaderMode>('selection')
 const fullView = ref<FullViewMode>('dual')
 const sourceFile = ref<File | null>(null)
@@ -59,6 +65,19 @@ const currentPage = ref(1)
 const translatedPages = ref(0)
 const translatedCurrentPage = ref(1)
 const viewingTranslation = computed(() => mode.value === 'full' && Boolean(translatedFile.value))
+const activeEdits = computed(() => viewingTranslation.value ? translatedEdits.value : originalEdits.value)
+function activeViewer() { return viewingTranslation.value ? translatedViewer.value : viewer.value }
+function setAnnotationTool(tool: 'select' | 'highlight' | 'erase') {
+  annotationTool.value = tool
+  editNotice.value = ''
+  translation.cancel()
+  window.getSelection()?.removeAllRanges()
+}
+function saveHighlights() {
+  if (busy.value || variantLoading.value) return
+  editNotice.value = ''; errorMsg.value = ''; void activeViewer()?.saveHighlights()
+}
+function undoHighlight() { editNotice.value = ''; activeViewer()?.undoHighlight() }
 const shownPage = computed(() => viewingTranslation.value ? translatedCurrentPage.value : currentPage.value)
 const shownPages = computed(() => viewingTranslation.value ? translatedPages.value : numPages.value)
 const panelOpen = ref(true)
@@ -71,6 +90,7 @@ const outlineOpen = ref(true)
 
 const translation = useTranslation(() => settings)
 
+const keyPlatform = computed(() => modelProvider(settings.baseUrl, settings.model) === 'mimo' ? PROVIDER_PRESETS.mimo : PROVIDER_PRESETS.deepseek)
 const hasApiKey = computed(() => settings.apiKey.trim().length > 0)
 /** 护眼蒙版的 CSS 颜色；'transparent' 表示原色 */
 const pageTintColor = computed(() => tintColor(settings.pageTint))
@@ -111,7 +131,12 @@ function cycleTint() {
   settings.pageTint = next.value
 }
 
-function openFile(file: File) {
+function openFile(file: File, handle?: PdfFileHandle) {
+  if (originalEdits.value.saving || translatedEdits.value.saving) return
+  if ((originalEdits.value.dirty || translatedEdits.value.dirty) && !window.confirm('当前文档有未保存的高亮。打开其他 PDF 将丢弃这些编辑，继续吗？')) return
+  originalEdits.value = { dirty: false, canUndo: false, saving: false }
+  translatedEdits.value = { dirty: false, canUndo: false, saving: false }
+  editNotice.value = ''
   fullController?.abort()
   lookupController?.abort()
   const job = ++fullJob
@@ -138,7 +163,7 @@ function openFile(file: File) {
   errorMsg.value = ''
   // 每次打开都回到配置里的初始缩放
   scale.value = settings.defaultZoom
-  void viewer.value?.openFile(file)
+  void viewer.value?.openFile(file, handle)
   void findSavedTranslation(file, lookup.signal)
     .then((found) => { if (job === fullJob) savedTranslation.value = found })
     .catch((err) => {
@@ -163,7 +188,7 @@ function onLoaded(info: DocInfo) {
 }
 
 function onSelection(payload: SelectionPayload) {
-  if (mode.value === 'selection') translation.submit(payload)
+  if (mode.value === 'selection' && annotationTool.value === 'select') translation.submit(payload)
 }
 
 function goto(page: number) {
@@ -202,6 +227,7 @@ function fit() {
 }
 
 function setMode(value: ReaderMode) {
+  if (activeEdits.value.saving) return
   const page = value === 'full' && translatedFile.value ? translatedCurrentPage.value : currentPage.value
   mode.value = value
   if (value === 'full' && numPages.value > FULL_TRANSLATION_PAGE_LIMIT) {
@@ -216,6 +242,8 @@ function setMode(value: ReaderMode) {
 }
 
 async function showTranslatedVariant() {
+  if (translatedEdits.value.saving) return
+
   const source = sourceFile.value
   const saved = savedTranslation.value
   if (!source || !saved) return
@@ -248,11 +276,17 @@ async function showTranslatedVariant() {
   }
 }
 
-watch(fullView, () => {
+function setFullView(next: FullViewMode) {
+  if (next === fullView.value || translatedEdits.value.saving) return
+  if (translatedEdits.value.dirty && !window.confirm('当前译本有未保存的高亮。切换译本会丢弃这些编辑，继续吗？')) return
+  fullView.value = next
   if (translatedFile.value) void showTranslatedVariant()
-})
+}
+
 
 async function startFullTranslation(replaceExisting = false) {
+  if (originalEdits.value.saving || translatedEdits.value.saving) return
+  if (replaceExisting && translatedEdits.value.dirty && !window.confirm('重新翻译会丢弃当前译本未保存的高亮，继续吗？')) return
   const file = sourceFile.value
   if (!file || !numPages.value || lookupBusy.value || variantLoading.value || fullStatus.value === 'running') return
   if (!replaceExisting && translatedFile.value) return
@@ -325,8 +359,18 @@ async function loadConfigFromFile() {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement | null
+  const editingText = !!target?.closest('input, textarea, select, [contenteditable="true"]')
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !settingsOpen.value) {
+    if (e.key.toLowerCase() === 's') {
+      e.preventDefault(); saveHighlights(); return
+    }
+    if (e.key.toLowerCase() === 'z' && shownPages.value && !editingText) {
+      e.preventDefault(); undoHighlight(); return
+    }
+  }
   // Ctrl+Enter：翻译当前选区（shortcut 模式的主要入口，auto 模式下也能用来强制重翻）
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && mode.value === 'selection' && annotationTool.value === 'select') {
     const target = e.target as HTMLElement | null
     const tag = target?.tagName
     // 焦点在输入框里就不抢，避免打断编辑
@@ -385,14 +429,18 @@ onBeforeUnmount(() => {
   <div class="app">
     <AppToolbar
       ref="toolbar"
-      :file-name="fileName"
+      :file-name="viewingTranslation ? translatedFile?.name ?? fileName : fileName"
+      :tool="annotationTool"
+      :dirty="activeEdits.dirty"
+      :can-undo="activeEdits.canUndo"
+      :saving="activeEdits.saving"
       :num-pages="shownPages"
       :current-page="shownPage"
       :scale="scale"
       :panel-open="panelOpen"
       :outline-open="outlineOpen"
       :has-outline="outline.length > 0"
-      :busy="busy"
+      :busy="busy || variantLoading"
       :tint-label="pageTintLabel"
       :mode="mode"
       @file="openFile"
@@ -404,18 +452,21 @@ onBeforeUnmount(() => {
       @toggle-panel="panelOpen = !panelOpen"
       @open-settings="settingsOpen = true"
       @mode="setMode"
+      @tool="setAnnotationTool"
+      @save="saveHighlights"
+      @undo="undoHighlight"
     />
 
     <aside v-if="configReady && !hasApiKey" class="api-setup" role="status" aria-label="翻译配置提示">
-      <span>翻译前请填写自己的 DeepSeek API Key；阅读 PDF 无需配置。</span>
-      <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">申请 API Key</a>
+      <span>翻译前请填写自己的 {{ keyPlatform.label }} API Key；阅读 PDF 无需配置。</span>
+      <a :href="keyPlatform.keyUrl" target="_blank" rel="noopener noreferrer">申请 API Key</a>
       <button class="btn btn--primary btn--sm" @click="settingsOpen = true">打开设置</button>
     </aside>
 
     <section v-if="mode === 'full'" class="full-controls" aria-label="全文译本">
       <div class="view-switch" aria-label="译本显示方式">
-        <button :aria-pressed="fullView === 'dual'" :class="{ active: fullView === 'dual' }" @click="fullView = 'dual'">中英对照</button>
-        <button :aria-pressed="fullView === 'chinese'" :class="{ active: fullView === 'chinese' }" @click="fullView = 'chinese'">只看中文</button>
+        <button :aria-pressed="fullView === 'dual'" :class="{ active: fullView === 'dual' }" @click="setFullView('dual')">中英对照</button>
+        <button :aria-pressed="fullView === 'chinese'" :class="{ active: fullView === 'chinese' }" @click="setFullView('chinese')">只看中文</button>
       </div>
       <button v-if="fullStatus === 'running'" class="btn" :disabled="fullProgress?.stage === 'saving'" @click="cancelFullTranslation">取消翻译</button>
       <template v-else>
@@ -457,6 +508,10 @@ onBeforeUnmount(() => {
           ref="viewer"
           v-model:scale="scale"
           :tint="pageTintColor"
+          :tool="annotationTool"
+          @edit-state="originalEdits = $event"
+          @notice="editNotice = $event"
+          @saved="sourceFile = $event"
           @loaded="onLoaded"
           @outline="onOutline"
           @page-change="onOriginalPageChange"
@@ -484,7 +539,11 @@ onBeforeUnmount(() => {
           ref="translatedViewer"
           v-model:scale="scale"
           :tint="pageTintColor"
+          :tool="annotationTool"
           :navigation="false"
+          @edit-state="translatedEdits = $event"
+          @notice="editNotice = $event"
+          @saved="translatedFile = $event; variantFiles.set(fullView, $event)"
           @loaded="onChineseLoaded"
           @page-change="onChinesePageChange"
           @error="errorMsg = $event"
@@ -495,7 +554,10 @@ onBeforeUnmount(() => {
 
     <footer class="reader-status">
       <span><i class="status-dot" />本机阅读 <span class="reader-status__separator">/</span> {{ mode === 'full' ? '全文翻译' : '划词翻译' }}</span>
-      <span v-if="mode === 'full' && savedPath" class="reader-status__path" :title="savedPath">{{ savedPath }}<span v-if="fallbackUsed"> · 已回退到用户目录</span></span>
+      <span v-if="mode === 'full' && savedPath && !activeEdits.dirty && !editNotice && annotationTool === 'select'" class="reader-status__path" :title="savedPath">{{ savedPath }}<span v-if="fallbackUsed"> · 已回退到用户目录</span></span>
+      <span v-else-if="activeEdits.dirty" class="reader-status__unsaved">高亮未保存 · Ctrl+S 保存 · Ctrl+Z 撤销 · 退出会丢弃</span>
+      <span v-else-if="editNotice" role="status">{{ editNotice }}</span>
+      <span v-else-if="annotationTool !== 'select'">{{ annotationTool === 'highlight' ? '划选文字添加高亮' : '点击高亮以擦除' }} · Ctrl+S 保存 · Ctrl+Z 撤销</span>
       <span v-else>{{ sourceFile ? `${numPages} 页 · ${settings.model}` : '打开一篇论文，专注每一次阅读' }}</span>
     </footer>
 

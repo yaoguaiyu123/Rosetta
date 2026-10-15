@@ -1,3 +1,4 @@
+import { reasoningParameters, modelProvider } from './providers'
 import type { ReasoningEffort } from '../types'
 import type { ChatMessage } from './prompt'
 import { resolveChatUrl, resolveModelsUrl } from './settings'
@@ -34,7 +35,7 @@ async function describeHttpError(res: Response): Promise<string> {
     401: 'API Key 无效或已过期',
     402: '账户余额不足',
     403: '没有访问该模型的权限',
-    404: '接口地址不对，检查 baseURL 是否写成了 https://api.deepseek.com/v1',
+    404: '接口地址不对，请检查设置中的服务商和接口地址',
     422: '请求参数不被接受',
     429: '请求过于频繁或已超额度',
     500: '服务端错误，稍后重试',
@@ -82,10 +83,8 @@ export async function streamChat(options: StreamChatOptions): Promise<string> {
     temperature,
     stream: true
   }
-  // 官方文档：reasoning_effort 的 none 关闭思考模式，默认强度是 high。
-  // 不显式关掉的话，模型会先"想一遍"再翻译 —— 白等时间、白花 token，
-  // 而且思考模式下 temperature 根本不生效。
-  if (reasoning !== 'omit') payload.reasoning_effort = reasoning
+  Object.assign(payload, reasoningParameters(baseUrl, model, reasoning))
+  if (modelProvider(baseUrl, model) === 'mimo' && !['none', 'omit'].includes(reasoning)) delete payload.temperature
 
   let res: Response
   try {

@@ -97,7 +97,7 @@ export function useTranslation(getSettings: () => Settings) {
 
     if (!settings.apiKey.trim()) {
       state.status = 'error'
-      state.error = '还没有填 API Key。点右上角「设置」，把 DeepSeek 的 Key 填进去。'
+      state.error = '还没有填 API Key。点右上角「设置」，填写所选服务商的 Key。'
       return
     }
 

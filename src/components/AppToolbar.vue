@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { ReaderMode } from '../types'
+import { pickPdf, type PdfFileHandle } from '../lib/fileAccess'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{
@@ -15,14 +16,22 @@ const props = defineProps<{
   busy: boolean
   /** 当前护眼色调的名字，显示在按钮上 */
   tintLabel: string
+  tool: 'select' | 'highlight' | 'erase'
+  dirty: boolean
+  canUndo: boolean
+  saving: boolean
   mode: ReaderMode
 }>()
 
 const emit = defineEmits<{
-  (e: 'file', file: File): void
+  (e: 'file', file: File, handle?: PdfFileHandle): void
   (e: 'goto', page: number): void
   (e: 'zoom', delta: number): void
   (e: 'fit'): void
+  (e: 'tool', value: 'select' | 'highlight' | 'erase'): void
+  (e: 'save'): void
+  (e: 'undo'): void
+  (e: 'error', message: string): void
   (e: 'toggle-panel'): void
   (e: 'toggle-outline'): void
   (e: 'open-settings'): void
@@ -40,8 +49,17 @@ watch(
   }
 )
 
-function pickFile() {
-  fileInput.value?.click()
+async function pickFile() {
+  try {
+    const picked = await pickPdf()
+    if (picked) emit('file', picked.file, picked.handle)
+    else fileInput.value?.click()
+  } catch (error) {
+    if ((error as Error).name !== 'AbortError') {
+      // Some browser policies disable the picker; a regular input still permits reading/save-as.
+      fileInput.value?.click()
+    }
+  }
 }
 
 function onFileChange(e: Event) {
@@ -73,7 +91,7 @@ defineExpose({ pickFile })
   <header class="toolbar">
       <div class="brand" title="译读 · PDF 翻译阅读器"><AppIcon name="book" :size="20" /><strong>译读</strong></div>
       <div class="toolbar__file">
-        <button class="btn btn--open" :disabled="busy" @click="pickFile"><AppIcon name="file" :size="16" />打开 PDF</button>
+        <button class="btn btn--open" :disabled="busy || saving" @click="pickFile"><AppIcon name="file" :size="16" />打开 PDF</button>
         <input ref="fileInput" type="file" accept="application/pdf,.pdf" style="display: none" @change="onFileChange" />
       </div>
       <nav class="toolbar__modes" aria-label="阅读模式">
@@ -97,6 +115,13 @@ defineExpose({ pickFile })
         </div>
         <button class="btn btn--quiet fit-button" title="按窗口宽度缩放" @click="emit('fit')"><AppIcon name="fit" :size="16" /><span>适应宽度</span></button>
       </template>
+      </div>
+      <div v-if="numPages" class="annotation-tools" role="group" aria-label="PDF 高亮工具">
+        <button class="btn btn--icon btn--quiet" :class="{ 'btn--on': tool === 'select' }" :aria-pressed="tool === 'select'" :disabled="saving || busy" title="选择文字并翻译" aria-label="选择文字" @click="emit('tool', 'select')"><AppIcon name="cursor" :size="16" /></button>
+        <button class="btn btn--icon btn--quiet" :class="{ 'btn--on': tool === 'highlight' }" :aria-pressed="tool === 'highlight'" :disabled="saving || busy" title="划选文字添加高亮；Ctrl+S 保存" aria-label="高亮" @click="emit('tool', 'highlight')"><AppIcon name="highlight" :size="16" /></button>
+        <button class="btn btn--icon btn--quiet" :class="{ 'btn--on': tool === 'erase' }" :aria-pressed="tool === 'erase'" :disabled="saving || busy" title="点击高亮以擦除" aria-label="橡皮擦" @click="emit('tool', 'erase')"><AppIcon name="eraser" :size="16" /></button>
+        <button class="btn btn--icon btn--quiet" :disabled="!canUndo || saving || busy" title="撤销上一步高亮操作（Ctrl+Z）" aria-label="撤销高亮" @click="emit('undo')"><AppIcon name="undo" :size="16" /></button>
+        <button class="btn btn--icon btn--quiet" :class="{ 'annotation-tools__unsaved': dirty }" :disabled="!dirty || saving || busy" :title="saving ? '正在保存…' : dirty ? '高亮未保存（Ctrl+S）' : '高亮已保存'" aria-label="保存 PDF" @click="emit('save')"><AppIcon name="save" :size="16" /></button>
       </div>
       <div class="toolbar__actions">
         <button class="btn btn--quiet" :class="{ 'btn--on': tintLabel !== '原色' }" title="切换页面色调" @click="emit('cycle-tint')"><AppIcon name="tint" :size="16" /><span>{{ tintLabel }}</span></button>

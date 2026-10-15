@@ -226,3 +226,11 @@ kbd { padding: 1px 5px; border: 1px solid var(--border); border-bottom-width: 2p
   .reader-status { font-size: 9px; gap: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Compact annotation controls share the existing reading toolbar. */
+.annotation-tools { display: flex; flex: none; align-items: center; gap: 1px; border-left: 1px solid var(--border); padding-left: 5px; }
+.annotation-tools__unsaved { color: #f3cd70; }
+.reader-status__unsaved { color: #f3cd70; }
+.viewer--highlight .textLayer { cursor: text; }
+.viewer--erase .pdf-page { cursor: crosshair; }
+.viewer--erase .textLayer { pointer-events: none; user-select: none; }

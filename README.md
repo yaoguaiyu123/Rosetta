@@ -8,14 +8,15 @@
 
 - **划词翻译**：选中英文后流式显示中文，也可用 Ctrl + Enter 触发；支持编辑原文、重试与缓存。
 - **全文翻译**：支持 40 页及以下的文字型 PDF，生成中文单版（mono）和中英对照版（dual）；支持进度、取消、复用及重新翻译。
+- **PDF 高亮**：划选文字添加高亮，橡皮擦点击擦除；Ctrl + Z 撤销，Ctrl + S 写入 PDF，退出不自动保存。
 - **阅读**：暗色界面、页面色调、虚拟滚动、页码跳转和适应宽度。划词模式显示 PDF 自带的书签目录，无书签时不生成目录。
 - **缩放**：Ctrl + 滚轮或 Shift + 滚轮缩放 PDF；按钮每档 5%，范围 25%–300%。
 - **本地启动**：Windows 可通过启动脚本或桌面快捷方式打开，无需注册账号。
-- **模型配置**：使用自己的 API Key，支持 DeepSeek 和其他 OpenAI 兼容接口。
+- **模型配置**：使用自己的 API Key，支持 DeepSeek、小米 MiMo 和其他 OpenAI 兼容接口；DeepSeek 与 MiMo 默认关闭思考。
 
 ## 普通用户：下载便携版
 
-打开 [GitHub Releases](https://github.com/yaoguaiyu123/Rosetta/releases)，下载 Windows x64 完整便携版 ZIP，完整解压后双击 **Rosetta.exe**。不需要安装 Node.js、uv 或 Python，模型和字体已包含；首次使用时，应用会提醒填写自己的 DeepSeek API Key，并提供申请链接与「打开设置」按钮；测试连接、选择模型后保存即可。仅阅读 PDF 无需配置。
+打开 [GitHub Releases](https://github.com/yaoguaiyu123/Rosetta/releases)，下载 Windows x64 完整便携版 ZIP，完整解压后双击 **Rosetta.exe**。不需要安装 Node.js、uv 或 Python，模型和字体已包含；首次使用时，应用会提醒填写自己的 DeepSeek 或小米 MiMo API Key，并提供申请链接与「打开设置」按钮；测试连接、选择模型后保存即可。仅阅读 PDF 无需配置。
 
 便携版仍通过浏览器阅读，翻译需要联网调用你配置的模型服务。配置和缓存保存在解压目录的 data，译本目录可在设置中修改。退出启动窗口或托盘中的 Rosetta 会停止服务。详见 [便携版说明](docs/portable-release.md)。
 
@@ -51,7 +52,7 @@ npm run shortcut:desktop
 
 ## 配置翻译服务
 
-打开右上角「设置」，填写接口地址、API Key 和模型，测试连接后保存。DeepSeek 的 Key 可在 [DeepSeek 平台](https://platform.deepseek.com/) 申请，其他服务需提供兼容接口。
+打开右上角「设置」，填写接口地址、API Key 和模型，测试连接后保存。DeepSeek 的 Key 可在 [DeepSeek 平台](https://platform.deepseek.com/) 申请，小米 MiMo 的 Key 可在 [MiMo 平台](https://platform.xiaomimimo.com/#/console/api-keys) 申请。在设置中选择服务商会自动填写接口和示例模型，默认关闭思考，模型以连接测试返回的列表为准。其他服务需提供兼容接口。
 
 也可将 `.env.example` 复制为 `.env` 后编辑。磁盘配置优先于浏览器设置，设置页面保存时会写回 `.env`。
 
@@ -62,7 +63,7 @@ npm run shortcut:desktop
 | `API_KEY` | 自己的 Key，模板中为空 |
 | `MODEL` | 模型名；以服务商和连接测试返回的可用列表为准 |
 | `TEMPERATURE` | 默认 0.3，部分模型可能不支持 |
-| `REASONING` | 默认 `none`；不支持该参数时使用 `omit` |
+| `REASONING` | 默认 `none`；MiMo 自动使用 `thinking.type=disabled`，其他接口使用 `reasoning_effort`；`omit` 不发送思考参数 |
 | `TRIGGER` | `auto` 选中即翻，或 `shortcut` 使用 Ctrl + Enter |
 | `DEBOUNCE_MS` | 自动翻译等待时间，默认 1000 毫秒 |
 | `DEFAULT_ZOOM` | 初始缩放，默认 1.5 |
@@ -71,6 +72,14 @@ npm run shortcut:desktop
 | `SYSTEM_PROMPT` | 划词提示词，留空使用内置值 |
 
 模型名称、参数支持及计费由服务商决定。项目不提供共享密钥，也不提供离线文字翻译模型。
+
+## PDF 高亮与保存
+
+工具栏依次提供选择、高亮、橡皮擦、撤销和保存。高亮和擦除模式下不会自动触发划词翻译。高亮是标准 PDF 批注，保存后可在其他 PDF 阅读器中查看。
+
+通过「打开 PDF」选择文件后，Ctrl + S 可申请授权并保存回原文件；拖入文件或编辑生成的译本时，首次保存通常需要选择保存位置，可选回原文件覆盖。浏览器不支持直接写入时，会下载编辑后的 PDF，并明确提示手动替换原文件。
+
+编辑只保存在当前会话，退出或刷新不自动写入。Ctrl + Z 可撤销上一步，包括保存后的操作；撤销后需再次 Ctrl + S 才会更新磁盘文件。打开另一个 PDF 或切换中英/中文译本会提示丢弃未保存编辑。详见 [高亮说明](docs/pdf-highlights.md)。
 
 ## 全文翻译与保存
 

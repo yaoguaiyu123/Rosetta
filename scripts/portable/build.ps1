@@ -1,4 +1,4 @@
-﻿param([string]$PythonBase = '', [string]$EngineSite = '', [string]$NodeVersion = '24.21.0', [switch]$Resume)
+﻿param([string]$PythonBase = '', [string]$EngineSite = '', [string]$NodeVersion = '24.21.0', [switch]$Resume, [string]$OutputRoot = '')
 $ErrorActionPreference='Stop'
 $portableRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 Set-Location -LiteralPath $portableRoot
@@ -10,5 +10,6 @@ if (-not $PythonBase) {
 if (-not $EngineSite) { $EngineSite=Join-Path $portableRoot '.runtime/pdf2zh-next/.venv/Lib/site-packages' }
 $portableBuildArgs=@('scripts/portable/build.py','--python-base',$PythonBase,'--engine-site',$EngineSite,'--node-version',$NodeVersion)
 if ($Resume) {$portableBuildArgs+='--resume'}
+if ($OutputRoot) {$portableBuildArgs+=@('--output-root',[IO.Path]::GetFullPath($OutputRoot))}
 & (Join-Path $PythonBase 'python.exe') @portableBuildArgs
 if ($LASTEXITCODE -ne 0) {throw 'Portable build failed.'}

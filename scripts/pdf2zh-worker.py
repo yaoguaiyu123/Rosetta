@@ -5,11 +5,39 @@ import asyncio
 import json
 import logging
 import sys
+from urllib.parse import urlparse
 from pathlib import Path
 
 
 def emit(kind: str, **data):
     print(json.dumps({"type": kind, **data}, ensure_ascii=False), flush=True)
+
+
+def build_engine(config):
+    from pdf2zh_next.config.translate_engine_model import OpenAISettings
+    base = str(config.get("baseUrl") or "https://api.deepseek.com/v1").rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[:-len("/chat/completions")]
+    elif not base.endswith("/v1") and base.count("/") == 2:
+        base += "/v1"
+    reasoning = config.get("reasoning", "none")
+    host = urlparse(base).hostname or ""
+    deepseek = host == "deepseek.com" or host.endswith(".deepseek.com")
+    mimo = (
+        host == "xiaomimimo.com" or host.endswith(".xiaomimimo.com")
+        or (not deepseek and str(config.get("model", "")).startswith("mimo-"))
+    )
+    engine = OpenAISettings(
+        openai_base_url=base, openai_api_key=config["apiKey"],
+        openai_model=config.get("model") or "deepseek-flash",
+        openai_timeout="120", openai_temperature=str(config.get("temperature", 0.3)),
+        openai_send_temprature=not (mimo and reasoning not in ("none", "omit")), openai_enable_json_mode=False,
+        openai_reasoning_effort=None if mimo or reasoning == "omit" else reasoning,
+        openai_send_reasoning_effort=not mimo and reasoning != "omit",
+    )
+    if mimo and reasoning != "omit":
+        engine._openai_extra_body = {"thinking": {"type": "disabled" if reasoning == "none" else "enabled"}}
+    return engine
 
 
 async def translate(request):
@@ -25,23 +53,8 @@ async def translate(request):
             raise ValueError("请先解锁加密 PDF，再进行全文翻译。")
     emit("progress", stage="preparing", percent=0, detail="正在准备翻译", pages=pages)
     from pdf2zh_next.config.model import PDFSettings, SettingsModel, TranslationSettings
-    from pdf2zh_next.config.translate_engine_model import OpenAISettings
     from pdf2zh_next.high_level import do_translate_async_stream
-    config = request["config"]
-    base = str(config.get("baseUrl") or "https://api.deepseek.com/v1").rstrip("/")
-    if base.endswith("/chat/completions"):
-        base = base[:-len("/chat/completions")]
-    elif not base.endswith("/v1") and base.count("/") == 2:
-        base += "/v1"
-    reasoning = config.get("reasoning", "none")
-    engine = OpenAISettings(
-        openai_base_url=base, openai_api_key=config["apiKey"],
-        openai_model=config.get("model") or "deepseek-flash",
-        openai_timeout="120", openai_temperature=str(config.get("temperature", 0.3)),
-        openai_send_temprature=True, openai_enable_json_mode=False,
-        openai_reasoning_effort=None if reasoning == "omit" else reasoning,
-        openai_send_reasoning_effort=reasoning != "omit",
-    )
+    engine = build_engine(request["config"])
     settings = SettingsModel(
         translate_engine_settings=engine,
         translation=TranslationSettings(

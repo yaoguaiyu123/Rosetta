@@ -4,6 +4,7 @@ import type { Settings } from '../types'
 import { DEFAULT_SYSTEM_PROMPT } from '../lib/prompt'
 import { defaultSettings, REASONING_OPTIONS } from '../lib/settings'
 import { listModels } from '../lib/deepseek'
+import { modelProvider, PROVIDER_PRESETS, type ModelProvider } from '../lib/providers'
 import { cacheCount, clearCache } from '../lib/cache'
 
 const props = defineProps<{ open: boolean; settings: Settings; configFile?: string }>()
@@ -16,9 +17,27 @@ const draft = reactive<Settings>({ ...props.settings })
 const showKey = ref(false)
 const caches = ref(0)
 
+const provider = computed(() => modelProvider(draft.baseUrl, draft.model))
+const keyPlatform = computed(() => provider.value === 'mimo' ? PROVIDER_PRESETS.mimo : PROVIDER_PRESETS.deepseek)
+const reasoningOptions = computed(() => provider.value === 'mimo'
+  ? REASONING_OPTIONS.filter(o => ['none', 'high', 'omit'].includes(o.value)).map(o => ({ ...o, label: o.value === 'high' ? '开启思考' : o.label }))
+  : REASONING_OPTIONS)
+function chooseProvider(value: ModelProvider) {
+  if (value === 'custom') return
+  const preset = PROVIDER_PRESETS[value]
+  if (provider.value !== value) draft.apiKey = ''
+  draft.baseUrl = preset.baseUrl
+  draft.model = preset.model
+  draft.reasoning = 'none'
+  modelGeneration++
+  models.value = []
+  modelState.value = 'idle'
+  testState.value = 'idle'
+}
+
 /** 当前选中的思考强度说明 */
 const reasoningHint = computed(
-  () => REASONING_OPTIONS.find((o) => o.value === draft.reasoning)?.hint ?? ''
+  () => provider.value === 'mimo' ? (draft.reasoning === 'omit' ? '不发送 thinking 参数，由服务商决定默认行为。' : draft.reasoning === 'none' ? '关闭思考，直接生成译文。' : '开启 MiMo 思考模式；MiMo 不区分此处的思考强度。') : REASONING_OPTIONS.find((o) => o.value === draft.reasoning)?.hint ?? ''
 )
 
 type TestState = 'idle' | 'testing' | 'ok' | 'fail'
@@ -42,7 +61,10 @@ watch(
   }
 )
 
+let modelGeneration = 0
 async function loadModels() {
+  const generation = ++modelGeneration
+  const { baseUrl, apiKey } = draft
   if (!draft.apiKey.trim()) {
     models.value = []
     modelState.value = 'idle'
@@ -51,9 +73,12 @@ async function loadModels() {
   modelState.value = 'loading'
   modelError.value = ''
   try {
-    models.value = await listModels(draft.baseUrl, draft.apiKey, AbortSignal.timeout(15000))
+    const result = await listModels(baseUrl, apiKey, AbortSignal.timeout(15000))
+    if (generation !== modelGeneration || baseUrl !== draft.baseUrl || apiKey !== draft.apiKey) return
+    models.value = result
     modelState.value = 'ok'
   } catch (err) {
+    if (generation !== modelGeneration || baseUrl !== draft.baseUrl || apiKey !== draft.apiKey) return
     models.value = []
     modelState.value = 'failed'
     modelError.value = (err as Error).message
@@ -105,11 +130,17 @@ function save() {
 
       <div class="dialog__body">
         <section class="field">
+          <div class="field__label">翻译服务商</div>
+          <div class="row row--wrap">
+            <button v-for="(preset, id) in PROVIDER_PRESETS" :key="id" class="btn" :class="{ 'btn--on': provider === id }" :aria-pressed="provider === id" @click="chooseProvider(id)">{{ preset.label }}</button>
+          </div>
+          <p class="field__hint">也可手动填写其他 OpenAI 兼容接口。切换服务商后请填入对应的 API Key；默认关闭思考。</p>
+        </section>
+        <section class="field">
           <label class="field__label" for="s-base">接口地址</label>
           <input id="s-base" v-model.trim="draft.baseUrl" class="input" spellcheck="false" />
           <p class="field__hint">
-            填 OpenAI 兼容接口的 base 即可。DeepSeek 用
-            <code>https://api.deepseek.com/v1</code>；只填到域名也行，会自动补全。
+            填 OpenAI 兼容接口的 base 即可。DeepSeek 和小米 MiMo 可用上方按钮自动填入；只填到域名也行，会自动补全。
           </p>
         </section>
 
@@ -128,7 +159,7 @@ function save() {
             <button class="btn" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button>
           </div>
           <p class="field__hint">
-            在 <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">DeepSeek 开放平台</a>
+            在 <a :href="keyPlatform.keyUrl" target="_blank" rel="noopener noreferrer">{{ keyPlatform.label }} 开放平台</a>
             创建自己的 API Key，粘贴后点击「测试连接」，选择可用模型并保存。翻译需要联网，费用由服务商收取。
           </p>
           <p class="field__hint">
@@ -140,9 +171,7 @@ function save() {
           <label class="field__label" for="s-model">模型</label>
           <input id="s-model" v-model.trim="draft.model" class="input" spellcheck="false" />
           <p class="field__hint">
-            模型名由厂商决定、随时可能变（<code>deepseek-chat</code> / <code>deepseek-reasoner</code>
-            已于 2026-07-24 下线，现在官方是 <code>deepseek-flash</code> 与
-            <code>deepseek-v4-pro</code>）。所以这里不写死，直接问接口要：
+            模型名以服务商当前可用列表为准。填写 API Key 后点击「测试连接」，再选择模型。
             <template v-if="modelState === 'loading'">正在拉取你账号可用的模型…</template>
             <template v-else-if="modelState === 'failed'">
               没拉到列表（{{ modelError }}）。点下面的「测试连接」重试。
@@ -187,13 +216,13 @@ function save() {
         <section class="field">
           <div class="field__label"><span>思考模式</span></div>
           <div class="row row--wrap">
-            <label v-for="opt in REASONING_OPTIONS" :key="opt.value" class="radio">
+            <label v-for="opt in reasoningOptions" :key="opt.value" class="radio">
               <input v-model="draft.reasoning" type="radio" :value="opt.value" />
               <span>{{ opt.label }}</span>
             </label>
           </div>
           <p class="field__hint">{{ reasoningHint }}</p>
-          <p class="field__hint">
+          <p v-if="provider !== 'mimo'" class="field__hint">
             <strong>为什么默认关闭：</strong>官方文档写明 <code>reasoning_effort</code> 的
             <code>none</code> 关闭思考模式，而<strong>默认强度是 high</strong> —— 也就是说不动它的话，
             模型会先"想一遍"再翻译，白等时间、白花 token；而且「思考模式下 temperature 不生效」，

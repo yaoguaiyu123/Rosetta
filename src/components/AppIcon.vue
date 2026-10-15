@@ -13,6 +13,11 @@ const paths: Record<string, string> = {
   translate: 'M3 5h11M8 3v2m-3 3c1 4 4 6 8 8m-2-8c-1 4-4 6-8 8m12-5 5 10m-5-10-5 10m2-4h6',
   arrow: 'M5 12h14m-5-5 5 5-5 5',
   check: 'm5 12 4 4L19 6',
+  cursor: 'M5 3v16l4-4 4 7 3-2-4-7h7L5 3',
+  highlight: 'm15 3 6 6-9 9-6-6 9-9M6 12l-3 7 7-3M3 22h18',
+  eraser: 'm14 3 7 7-11 11H5l-4-4L14 3m-7 7 7 7M10 21h12',
+  undo: 'M9 4 3 10l6 6M3 10h11a7 7 0 0 1 0 14',
+  save: 'M4 3h13l4 4v14H3V3h1m3 0v6h10V3M7 21v-8h10v8',
   download: 'M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5',
 }
 </script>

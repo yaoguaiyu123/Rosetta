@@ -111,7 +111,7 @@ internal sealed class Rosetta : Form {
         Resize+=delegate { if(WindowState==FormWindowState.Minimized) Hide(); };
         FormClosing+=delegate { StopService(); Tray.Visible=false; Tray.Dispose(); };
         Shown+=async delegate {
-            try { await Task.Run((Action)StartService); if(!Stopping) { Status.Text = HasApiKey() ? "已启动。关闭浏览器后，可从这里再次打开。\n退出此窗口将停止本地服务。" : "已启动。翻译前请在阅读器的设置中填写\n自己的 DeepSeek API Key，测试连接后保存。\n阅读 PDF 无需配置；翻译由服务商计费。"; Open.Enabled=true; Browse(); } }
+            try { await Task.Run((Action)StartService); if(!Stopping) { Status.Text = HasApiKey() ? "已启动。关闭浏览器后，可从这里再次打开。\n退出此窗口将停止本地服务。" : "已启动。翻译前请在阅读器的设置中填写\nDeepSeek 或小米 MiMo Key，测试连接后保存。\n阅读 PDF 无需配置；翻译由服务商计费。"; Open.Enabled=true; Browse(); } }
             catch(Exception error) { if(!Stopping) Status.Text=error.Message; }
         };
     }

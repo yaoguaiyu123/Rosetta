@@ -1,7 +1,7 @@
 {
   "name": "pdf-translate-reader",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "本地 PDF 阅读、划词翻译与 PDFMathTranslate-next 全文翻译",
   "scripts": {
@@ -16,7 +16,7 @@
     "type-check": "vue-tsc --noEmit",
     "setup:engine": "node scripts/setup-pdf2zh-next.mjs",
     "test:engine": "node --test tests/full-translation.test.mjs",
-    "test:reader": "node --test tests/pdf-zoom.test.mjs",
+    "test:reader": "node --test tests/pdf-zoom.test.mjs tests/highlights.test.mjs tests/providers.test.mjs",
     "verify:m1": "node .workbuddy/tools/verify-m1.mjs",
     "audit:release": "node scripts/audit-release.mjs",
     "build:portable": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/portable/build.ps1"

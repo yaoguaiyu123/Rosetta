@@ -1,6 +1,6 @@
 # 完整便携版
 
-便携版支持 Windows 10/11 x64，使用系统自带的浏览器和 .NET Framework。下载 GitHub Releases 中的 `Rosetta-版本-windows-x64-portable.zip`，完整解压到可写文件夹，再双击 Rosetta.exe。无需安装 Node.js、uv 或 Python，模型及字体已经包含。首次使用只需在应用设置填写自己的 API Key 和模型。未配置 Key 时，阅读器会显示「申请 API Key」链接和「打开设置」按钮，启动窗口也会提醒；填写后测试连接、选择模型并保存即可。阅读 PDF 无需配置 Key。
+便携版支持 Windows 10/11 x64，使用系统自带的浏览器和 .NET Framework。下载 GitHub Releases 中的 `Rosetta-版本-windows-x64-portable.zip`，完整解压到可写文件夹，再双击 Rosetta.exe。无需安装 Node.js、uv 或 Python，模型及字体已经包含。首次使用只需在应用设置选择 DeepSeek 或小米 MiMo，填写自己的 API Key 和模型。未配置 Key 时，阅读器会显示「申请 API Key」链接和「打开设置」按钮，启动窗口也会提醒；填写后测试连接、选择模型并保存即可。阅读 PDF 无需配置 Key。
 
 这是浏览器阅读器配合本机启动器，不内置浏览器，不修改系统 PATH，不需要管理员权限，不注册服务或开机启动。配置、翻译缓存及任务临时文件位于解压目录的 data。译本仍默认输出到用户目录的 PDF译文，可在设置中自定义。
 
@@ -12,7 +12,7 @@
 
 构建机需要 npm 依赖、uv 已安装的 Python 3.12 和固定版本翻译引擎，以及暖启动下载完成的 BabelDOC 资源；用户不需要这些构建工具。
 
-执行 `npm run build:portable`。打包脚本从官方源下载 Node.js 并核对 SHA-256，复制可重定位 CPython 与第三方依赖，排除虚拟环境绝对路径、个人配置、翻译缓存及字节码。每个模型、字体、CMap 和 tokenizer 文件按 BabelDOC 元数据核验 SHA3-256。
+执行 `npm run build:portable`。可追加 `-- -OutputRoot <目录>` 自定义本地发行目录；默认仍为项目的 release 文件夹。打包脚本从官方源下载 Node.js 并核对 SHA-256，复制可重定位 CPython 与第三方依赖，排除虚拟环境绝对路径、个人配置、翻译缓存及字节码。每个模型、字体、CMap 和 tokenizer 文件按 BabelDOC 元数据核验 SHA3-256。
 
 仅在便携包的副本中修改 PDFMathTranslate-next/BabelDOC 的配置和缓存路径，使其使用 data；源码 checkout 中的引擎保持原状。完整修改源码随包保留，补丁逻辑在 scripts/portable/build.py。
 

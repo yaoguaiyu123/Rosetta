@@ -34,6 +34,7 @@ def main():
     args.add_argument('--engine-site', required=True)
     args.add_argument('--node-version', required=True)
     args.add_argument('--resume', action='store_true')
+    args.add_argument('--output-root', type=Path, help='Directory for extracted portable packages (default: project/release)')
     options = args.parse_args()
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
     base = Path(options.python_base).resolve()
@@ -47,7 +48,7 @@ def main():
     import pymupdf
     version = json.loads((ROOT/'package.json').read_text(encoding='utf-8'))['version']
     name = f'Rosetta-{version}-windows-x64-portable'
-    output = ROOT/'release'/name
+    output = (options.output_root.resolve() if options.output_root else ROOT/'release') / name
     # Never recursively delete a computed destination. Build into a new directory.
     if output.exists() and not options.resume: raise RuntimeError('Output already exists; use --resume only for an interrupted build.')
     if output.exists() and any((output/'data'/f).exists() for f in ['settings.env','cache/pdf2zh_next/cache.v1.db']): raise RuntimeError('Refuse to overwrite a portable folder containing user settings/cache.')
@@ -179,7 +180,7 @@ The packaged ONNX model card declares Apache-2.0; its card and full Apache licen
 Adobe CMap notices and OpenAI tiktoken MIT license are also included. Model/tokenizer assets are unmodified and verified against BabelDOC's published SHA3-256 hashes.
 No papers, translation caches, browser profiles, API keys or developer configurations are included.
 ''',encoding='utf-8')
-    manifest={'version':version,'platform':'windows-x64','node':options.node_version,'python':sys.version.split()[0],'pdf2zh-next':'2.9.0','babeldoc':'0.6.2','assets':asset_manifest,'sources':source_records}
+    manifest={'version':version,'platform':'windows-x64','node':options.node_version,'python':sys.version.split()[0],'pdf2zh-next':'2.9.0','babeldoc':'0.6.2','assets':asset_manifest,'sources':source_records,'sourceCommit':subprocess.check_output(['git','-c',f'safe.directory={ROOT.as_posix()}','rev-parse','HEAD'],cwd=ROOT).decode().strip()}
     (output/'portable-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
     log('Portable directory ready: '+name)
     log('Before archiving, run scripts/portable/verify.mjs with this directory, then scripts/portable/archive.py.')

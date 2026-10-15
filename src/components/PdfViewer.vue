@@ -4,9 +4,11 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs
 import { loadPdfDocument, pdfjsLib } from '../lib/pdfjs'
 import { loadOutline, type OutlineNode } from '../lib/outline'
 import type { DocInfo, SelectionPayload } from '../types'
+import { HighlightHistory, highlightFromQuads, containsHighlight, type Highlight } from '../lib/highlights'
+import { pickSavePdf, downloadPdf, type PdfFileHandle } from '../lib/fileAccess'
 import AppIcon from './AppIcon.vue'
 
-const props = withDefaults(defineProps<{ scale: number; tint: string; navigation?: boolean }>(), { navigation: true })
+const props = withDefaults(defineProps<{ scale: number; tint: string; navigation?: boolean; tool?: 'select' | 'highlight' | 'erase' }>(), { navigation: true, tool: 'select' })
 
 const emit = defineEmits<{
   (e: 'update:scale', value: number): void
@@ -18,6 +20,9 @@ const emit = defineEmits<{
   (e: 'busy', value: boolean): void
   (e: 'file', file: File): void
   (e: 'pick'): void
+  (e: 'edit-state', state: { dirty: boolean; canUndo: boolean; saving: boolean }): void
+  (e: 'notice', message: string): void
+  (e: 'saved', file: File): void
 }>()
 
 /** 页面之间与四周的留白 */
@@ -122,6 +127,7 @@ async function renderPage(n: number) {
     if (r.gen !== gen || !r.el.isConnected) return
 
     const viewport = page.getViewport({ scale: props.scale })
+    pageViewports.set(n, viewport)
     // 按设备像素比出图，保证文字清晰；上限 2 是防止 4K 屏下 canvas 过大
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     const canvas = document.createElement('canvas')
@@ -134,6 +140,7 @@ async function renderPage(n: number) {
     const task = page.render({
       canvas,
       viewport,
+      annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE,
       transform: [dpr, 0, 0, dpr, 0, 0]
     })
     r.task = task
@@ -157,6 +164,8 @@ async function renderPage(n: number) {
     const tintDiv = document.createElement('div')
     tintDiv.className = 'pdf-tint'
 
+    await loadPageHighlights(n)
+    if (r.gen !== gen || !r.el.isConnected) return
     r.el.replaceChildren(canvas, tintDiv, textDiv)
     r.rendered = true
   } catch (err) {
@@ -266,6 +275,7 @@ function onDocumentKeyup(e: KeyboardEvent) {
 }
 
 function onSelectionChange() {
+  if (props.tool !== 'select') return
   window.clearTimeout(selTimer)
   selTimer = window.setTimeout(captureSelection, 150)
 }
@@ -278,13 +288,17 @@ function onSelectionChange() {
  * 用户明明选好了、右侧栏却不刷新。mouseup 之后选区一定已经定型，立刻读最可靠。
  * 再补一次 60ms 的兜底，兼容选区延迟提交的浏览器。
  */
-function onMouseUp() {
+function onMouseUp(event: MouseEvent) {
+  if (saving || busy.value) return
+  if (props.tool === 'highlight') { addSelectionHighlights(); return }
+  if (props.tool === 'erase') { void eraseAt(event); return }
   markUserInput()
   captureSelection(true)
   window.setTimeout(() => captureSelection(true), 60)
 }
 
 function captureSelection(force = false) {
+  if (props.tool !== 'select') return
   if (!force && Date.now() - lastUserInputAt > USER_INPUT_WINDOW) return
 
   const sel = window.getSelection()
@@ -302,9 +316,132 @@ function captureSelection(force = false) {
     }
     node = node.parentNode
   }
-  if (!pageEl) return
+  if (!pageEl || !scrollEl.value?.contains(pageEl)) return
 
   emit('select', { text, page: Number(pageEl.dataset.pageNumber), at: Date.now() })
+}
+
+// ---------------- Standard PDF highlight annotations ----------------
+const history = new HighlightHistory()
+const existingHighlights = new Map<number, Highlight[]>()
+const storageKeys = new Set<string>()
+let sourceFile: File | null = null
+let fileHandle: PdfFileHandle | null = null
+let saving = false
+function emitEditState() { emit('edit-state', { dirty: history.dirty, canUndo: history.canUndo, saving }) }
+async function loadPageHighlights(pageNumber: number) {
+  const d = doc.value
+  if (!d || existingHighlights.has(pageNumber)) return
+  const page = await d.getPage(pageNumber)
+  const annotations = await page.getAnnotations()
+  if (doc.value !== d) return
+  existingHighlights.set(pageNumber, annotations.filter(a => a.subtype === 'Highlight' && a.quadPoints?.length).map(a => ({
+    ...highlightFromQuads(pageNumber - 1, Array.from({ length: a.quadPoints.length / 8 }, (_, i) => Array.from(a.quadPoints.slice(i * 8, i * 8 + 8)))),
+    id: a.id, key: `pdfjs_internal_editor_rosetta_existing_${a.id}`, popupRef: a.popupRef,
+    color: a.color ? Array.from(a.color) : [255, 255, 0], opacity: a.opacity ?? 1,
+  })))
+}
+function syncEdits() {
+  const d = doc.value
+  if (!d) return
+  for (const key of storageKeys) d.annotationStorage.remove(key)
+  storageKeys.clear()
+  for (const [key, value] of history.edits) {
+    const { key: _key, ...annotation } = value
+    d.annotationStorage.setValue(key, annotation)
+    storageKeys.add(key)
+  }
+  // Re-render from annotation storage, including deletions of existing highlights.
+  dropAll(); updateVisible(); emitEditState()
+}
+function addSelectionHighlights() {
+  const selection = window.getSelection(), d = doc.value
+  if (!selection || selection.isCollapsed || !selection.rangeCount || !d) return
+  const selected = selection.getRangeAt(0)
+  const updates: Highlight[] = []
+  for (const [pageNumber, r] of runtimes) {
+    if (!r.el || !r.rendered || !selected.intersectsNode(r.el)) continue
+    const quads: number[][] = []
+    const box = r.el.getBoundingClientRect()
+    const viewport = pageViewports.get(pageNumber)
+    if (!viewport) continue
+    // Walk text nodes rather than parent boxes: avoids painting blank columns or whole paragraphs.
+    const layer = r.el.querySelector('.textLayer')
+    if (!layer) continue
+    const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    const seen = new Set<string>()
+    while ((node = walker.nextNode())) {
+      if (!node.textContent?.trim() || !selected.intersectsNode(node)) continue
+      const piece = document.createRange(); piece.selectNodeContents(node)
+      if (selected.compareBoundaryPoints(Range.START_TO_START, piece) > 0) piece.setStart(selected.startContainer, selected.startOffset)
+      if (selected.compareBoundaryPoints(Range.END_TO_END, piece) < 0) piece.setEnd(selected.endContainer, selected.endOffset)
+      if (piece.collapsed) continue
+      for (const rect of piece.getClientRects()) {
+        if (rect.width < 0.5 || rect.height < 0.5) continue
+        const signature = [rect.left, rect.top, rect.right, rect.bottom].map(n => Math.round(n * 10)).join(',')
+        if (seen.has(signature)) continue
+        seen.add(signature)
+        const left = Math.max(0, rect.left-box.left), right = Math.min(box.width, rect.right-box.left)
+        const top = Math.max(0, rect.top-box.top), bottom = Math.min(box.height, rect.bottom-box.top)
+        if (right <= left || bottom <= top) continue
+        // The element rounds dimensions to CSS pixels; the viewport keeps the exact PDF transform.
+        const sx = viewport.width / box.width, sy = viewport.height / box.height
+        quads.push([ ...viewport.convertToPdfPoint(left*sx, top*sy), ...viewport.convertToPdfPoint(right*sx, top*sy),
+          ...viewport.convertToPdfPoint(left*sx, bottom*sy), ...viewport.convertToPdfPoint(right*sx, bottom*sy) ])
+      }
+    }
+    if (quads.length) updates.push(highlightFromQuads(pageNumber-1, quads))
+  }
+  if (!updates.length) return
+  selection.removeAllRanges()
+  history.change(updates); syncEdits()
+}
+const pageViewports = new Map<number, ReturnType<import('pdfjs-dist').PDFPageProxy['getViewport']>>()
+async function eraseAt(event: MouseEvent) {
+  const target = event.target instanceof Element ? event.target.closest<HTMLElement>('.pdf-page') : null
+  if (!target || !scrollEl.value?.contains(target)) return
+  const pageNumber = Number(target.dataset.pageNumber), d = doc.value
+  await loadPageHighlights(pageNumber)
+  if (doc.value !== d || saving) return
+  const viewport = pageViewports.get(pageNumber)
+  if (!viewport) return
+  const box = target.getBoundingClientRect()
+  const [x, y] = viewport.convertToPdfPoint((event.clientX-box.left)*viewport.width/box.width, (event.clientY-box.top)*viewport.height/box.height)
+  const all = [...existingHighlights.get(pageNumber) ?? [], ...[...history.edits.values()].filter(h => !h.id && h.pageIndex === pageNumber-1)]
+  const hit = all.reverse().find(h => !history.edits.get(h.key)?.deleted && containsHighlight(h, x, y))
+  if (!hit) return
+  if (hit.id) history.change([{ ...hit, deleted: true }])
+  else history.change([], [hit.key])
+  window.getSelection()?.removeAllRanges(); syncEdits()
+}
+function undoHighlight() { if (!saving && history.canUndo) { history.undo(); syncEdits() } }
+async function saveHighlights() {
+  const d = doc.value, file = sourceFile
+  if (!d || !file || saving || !history.dirty) return
+  saving = true; emitEditState()
+  try {
+    // Request a destination within the Ctrl+S/button activation, before serializing bytes.
+    const target = fileHandle ?? await pickSavePdf(file.name)
+    if (target?.requestPermission && await target.requestPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('没有获得文件写入权限')
+    const bytes = await d.saveDocument()
+    if (doc.value !== d) return
+    if (target) {
+      const writable = await target.createWritable()
+      try { await writable.write(new Blob([bytes], { type: 'application/pdf' })); await writable.close() }
+      catch (error) { await writable.abort().catch(() => {}); throw error }
+      fileHandle = target
+      emit('notice', '高亮已保存到 PDF。')
+    } else {
+      downloadPdf(bytes, file.name)
+      emit('notice', '浏览器不支持直接写入，已下载含高亮的 PDF；请用下载文件替换原文件。')
+    }
+    sourceFile = new File([bytes], file.name, { type: 'application/pdf', lastModified: Date.now() })
+    emit('saved', sourceFile)
+    history.markSaved()
+  } catch (error) {
+    if ((error as Error).name !== 'AbortError') emit('error', `高亮保存失败：${(error as Error).message}。编辑仍保留，可重试。`)
+  } finally { saving = false; emitEditState() }
 }
 
 // ---------------- 打开文件 ----------------
@@ -313,7 +450,7 @@ let openGeneration = 0
 let navigationGeneration = 0
 let pendingLoad: PDFDocumentLoadingTask | null = null
 
-async function openFile(file: File) {
+async function openFile(file: File, handle?: PdfFileHandle) {
   const generation = ++openGeneration
   navigationGeneration++
   if (pendingLoad) void pendingLoad.destroy()
@@ -333,6 +470,9 @@ async function openFile(file: File) {
     const vp1 = p1.getViewport({ scale: 1 })
 
     dropAll()
+    history.clear(); existingHighlights.clear(); storageKeys.clear(); pageViewports.clear()
+    sourceFile = file; fileHandle = handle ?? null
+    emitEditState()
     runtimes.clear()
     sizes.clear()
     const prevTask = loadingTask.value
@@ -407,7 +547,7 @@ function fitWidthScale() {
   return Math.min(3, Math.max(0.25, avail / f.w))
 }
 
-defineExpose({ openFile, goToPage, fitWidthScale })
+defineExpose({ openFile, goToPage, fitWidthScale, undoHighlight, saveHighlights })
 
 // ---------------- 生命周期 ----------------
 
@@ -474,7 +614,7 @@ function onDrop(e: DragEvent) {
   <div
     ref="scrollEl"
     class="viewer"
-    :class="{ 'drop-active': dragOver }"
+    :class="{ 'drop-active': dragOver, 'viewer--erase': tool === 'erase', 'viewer--highlight': tool === 'highlight' }"
     :style="{ '--page-tint': tint }"
     @scroll.passive="onScroll"
     @mousedown="markUserInput"
