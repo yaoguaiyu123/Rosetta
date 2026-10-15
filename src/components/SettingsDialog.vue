@@ -25,7 +25,9 @@ const reasoningOptions = computed(() => provider.value === 'mimo'
 function chooseProvider(value: ModelProvider) {
   if (value === 'custom') return
   const preset = PROVIDER_PRESETS[value]
-  if (provider.value !== value) draft.apiKey = ''
+  try {
+    if (new URL(draft.baseUrl).origin !== new URL(preset.baseUrl).origin) draft.apiKey = ''
+  } catch { draft.apiKey = '' }
   draft.baseUrl = preset.baseUrl
   draft.model = preset.model
   draft.reasoning = 'none'
