@@ -64,7 +64,7 @@ def main():
         if relative.startswith(('.workbuddy/', 'release/', 'tmp/', '.runtime/')): continue
         if relative == '.env' or (path.suffix in ['.pdf','.log']): raise RuntimeError('Private output in source inventory')
         if (ROOT/path).is_file(): copy(ROOT/path, output/'source'/path)
-    for relative in ['server.mjs','server/full-translation.mjs','server/files.mjs','scripts/pdf2zh-worker.py','LICENSE','COPYRIGHT','THIRD_PARTY_NOTICES.md']:
+    for relative in ['server.mjs','server/full-translation.mjs','server/files.mjs','server/model-config.mjs','scripts/pdf2zh-worker.py','LICENSE','COPYRIGHT','THIRD_PARTY_NOTICES.md']:
         copy(ROOT/relative, output/relative)
     clean_copy(ROOT/'dist', output/'dist')
     clean_copy(ROOT/'licenses', output/'licenses')

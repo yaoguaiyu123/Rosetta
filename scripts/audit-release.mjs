@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const git = args => execFileSync('git', ['-c', `safe.directory=${root.replaceAll('\\', '/')}`, ...args], { cwd: root, maxBuffer: 128 * 1024 * 1024, windowsHide: true })
 const env = existsSync(resolve(root, '.env')) ? readFileSync(resolve(root, '.env'), 'utf8') : ''
-const match = env.match(/^API_KEY\s*=\s*(.*?)\s*$/m)
-let key = match?.[1] ?? ''
-if (/^["']/.test(key)) key = key.slice(1, -1)
-else key = key.replace(/\s+#.*$/, '').trim()
+const keys = [...env.matchAll(/^(?:(?:DEEPSEEK|MIMO|CUSTOM)_)?API_KEY\s*=\s*(.*?)\s*$/gm)].map(match => {
+  let key=match[1]
+  if (/^["']/.test(key)) key=key.slice(1,-1)
+  else key=key.replace(/\s+#.*$/,'').trim()
+  return key
+}).filter(Boolean)
 const rules = [
   ['provider-key', /\bsk-[A-Za-z0-9_-]{20,}\b/g],
   ['github-token', /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{50,})\b/g],
@@ -28,7 +30,7 @@ const mocks = new Set(['sk-' + 'demo-only-not-a-real-key', 'mock-key-for-screens
 const findings = []
 const mocksFound = []
 function scan(buffer, location) {
-  if (key && (buffer.includes(Buffer.from(key)) || buffer.includes(Buffer.from(key, 'utf16le')))) findings.push({ location, rule: 'current-configured-key' })
+  if (keys.some(key => buffer.includes(Buffer.from(key)) || buffer.includes(Buffer.from(key, 'utf16le')))) findings.push({ location, rule: 'current-configured-key' })
   if (buffer.includes(0)) return // Binary bytes are still checked for the configured key above.
   const content = buffer.toString('utf8')
   for (const [rule, regex] of rules) {
@@ -55,7 +57,7 @@ for (const object of objects) {
 const result = {
   trackedFiles: tracked.length, gitObjects: objects.length, gitBlobs: blobs.length,
   commitsAcrossRefs: Number(git(['rev-list', '--all', '--count']).toString().trim()),
-  configuredKeyChecked: Boolean(key), findings, reviewedMockFindings: mocksFound,
+  configuredKeyChecked: keys.length > 0, findings, reviewedMockFindings: mocksFound,
   scope: 'Current tracked and nonignored untracked files; all local Git objects (blobs, commits, trees, tags) including unreachable objects. Binary blobs checked for the current key only. Ignored local runtime/config/output directories excluded.'
 }
 console.log(JSON.stringify(result, null, 2))

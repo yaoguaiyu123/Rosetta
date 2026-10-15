@@ -1,4 +1,5 @@
 import type { PageTint, ReasoningEffort, Settings } from '../types'
+import { captureProviderSettings, defaultProviderConfigs, modelProvider } from './providers'
 import { DEFAULT_SYSTEM_PROMPT } from './prompt'
 
 /** 浏览器本地存储的键（按来源隔离，端口变了就读不到） */
@@ -7,6 +8,8 @@ const STORAGE_KEY = 'pdfreader:settings:v1'
 const CONFIG_ENDPOINT = '__config'
 
 export const defaultSettings: Settings = {
+  activeProvider: 'deepseek',
+  providerConfigs: defaultProviderConfigs(),
   baseUrl: 'https://api.deepseek.com/v1',
   apiKey: '',
   // 模型名是厂商随时会改的字符串（deepseek-chat / deepseek-reasoner 已于
@@ -77,23 +80,23 @@ export function sanitizeSettings(input: Settings): Settings {
   out.temperature = Math.min(2, Math.max(0, Number(out.temperature) || 0))
   out.defaultZoom = Math.min(4, Math.max(0.25, Number(out.defaultZoom) || defaultSettings.defaultZoom))
   if (!out.baseUrl || !out.baseUrl.trim()) out.baseUrl = defaultSettings.baseUrl
-  if (!out.model || !out.model.trim()) out.model = defaultSettings.model
+  if (!out.model || !out.model.trim()) out.model = defaultProviderConfigs()[out.activeProvider ?? 'deepseek'].model
   if (out.trigger !== 'shortcut') out.trigger = 'auto'
   if (!PAGE_TINTS.some((t) => t.value === out.pageTint)) out.pageTint = defaultSettings.pageTint
   if (!REASONING_OPTIONS.some((o) => o.value === out.reasoning)) {
     out.reasoning = defaultSettings.reasoning
   }
-  return out
+  return { ...out, ...captureProviderSettings(out) }
 }
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...defaultSettings }
+    if (!raw) return sanitizeSettings({ ...defaultSettings })
     const parsed = JSON.parse(raw) as Partial<Settings>
-    return sanitizeSettings({ ...defaultSettings, ...parsed })
+    return sanitizeSettings({ ...defaultSettings, ...parsed, activeProvider: parsed.activeProvider ?? modelProvider(parsed.baseUrl ?? defaultSettings.baseUrl, parsed.model) })
   } catch {
-    return { ...defaultSettings }
+    return sanitizeSettings({ ...defaultSettings })
   }
 }
 
@@ -168,7 +171,7 @@ export async function saveFileConfig(
 }
 
 export function resetSettings(): Settings {
-  return { ...defaultSettings }
+  return sanitizeSettings({ ...defaultSettings })
 }
 
 /** 把用户随手填的 base 规范化成 chat/completions 的完整地址 */

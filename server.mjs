@@ -23,6 +23,7 @@ import { createServer } from 'node:http'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { envToModelConfig, modelConfigToEnv, legacyModelKeys } from './server/model-config.mjs'
 import { createFullTranslationService, defaultOutputDir, resolveOutputDir } from './server/full-translation.mjs'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -47,15 +48,10 @@ const ENV_PATH = readEnvFlag(CLI_ARGS) ?? join(SCRIPT_DIR, '.env')
 
 /** .env 键名 ↔ 前端字段名 */
 const ENV_KEYS = {
-  BASE_URL: 'baseUrl',
-  API_KEY: 'apiKey',
-  MODEL: 'model',
-  TEMPERATURE: 'temperature',
   TRIGGER: 'trigger',
   DEBOUNCE_MS: 'debounceMs',
   DEFAULT_ZOOM: 'defaultZoom',
   PAGE_TINT: 'pageTint',
-  REASONING: 'reasoning',
   OUTPUT_DIR: 'outputDir',
   SYSTEM_PROMPT: 'systemPrompt'
 }
@@ -136,11 +132,11 @@ function envToConfig(map) {
       out[field] = raw
     }
   }
-  return out
+  return { ...out, ...envToModelConfig(map) }
 }
 
 /** 写回 .env，保留用户手写的注释与未知键 */
-function writeEnvFile(values) {
+function writeEnvFile(values, removeKeys = []) {
   const { raw } = readEnvFile()
   const lines = raw ? raw.split(/\r?\n/) : []
   const done = new Set()
@@ -151,6 +147,7 @@ function writeEnvFile(values) {
     const eq = t.indexOf('=')
     if (eq <= 0) return line
     const key = t.slice(0, eq).trim()
+    if (removeKeys.includes(key)) return null
     if (!(key in values)) return line
     done.add(key)
     return `${key}=${formatEnvValue(values[key])}`
@@ -165,7 +162,7 @@ function writeEnvFile(values) {
     if (!done.has(key)) out.push(`${key}=${formatEnvValue(value)}`)
   }
 
-  writeFileSync(ENV_PATH, `${out.join('\n').replace(/\n+$/, '')}\n`, 'utf8')
+  writeFileSync(ENV_PATH, `${out.filter(line => line !== null).join('\n').replace(/\n+$/, '')}\n`, 'utf8')
 }
 
 const { map: initialEnv } = readEnvFile()
@@ -271,14 +268,16 @@ function handleConfigRequest(req, res) {
       const merged = { ...readEnvFile().map }
       // 只接受已知字段，别让任意内容写进文件。
       // 这里刻意保留空值：写入来自用户点「保存」的明确动作，清空就该真的清空。
-      // （而读取时会跳过空值 —— 手工编辑时留空更像"我没填"，不该抹掉已有内容。）
+      // 读取时也尊重明确写空的字段，避免旧浏览器副本把已清空的 Key 带回来。
       for (const [envKey, field] of Object.entries(ENV_KEYS)) {
         if (!(field in incoming)) continue
         const value = incoming[field]
         if (value === undefined || value === null) continue
         merged[envKey] = value
       }
-      writeEnvFile(merged)
+      Object.assign(merged, modelConfigToEnv(incoming, merged))
+      for (const key of legacyModelKeys) delete merged[key]
+      writeEnvFile(merged, legacyModelKeys)
       sendJson(res, 200, { ok: true, file: ENV_PATH })
     })
     .catch((err) => sendJson(res, 400, { ok: false, error: err.message }))

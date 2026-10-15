@@ -43,7 +43,7 @@ test('portable launcher creates embedded config without loose template and prese
     }
     launch()
     const settings = join(root,'data/settings.env')
-    assert.match(readFileSync(settings,'utf8'),/^API_KEY=""$/m)
+    assert.match(readFileSync(settings,'utf8'),/^MIMO_API_KEY=""$/m)
     // A root .env is deliberately ignored; an already configured data/settings.env is untouched.
     writeFileSync(settings,'# preserve user settings\nAPI_KEY="mock-key-for-testing"\nMODEL="user-chosen-model"\n')
     const before = createHash('sha256').update(readFileSync(settings)).digest('hex')

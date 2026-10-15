@@ -27,7 +27,16 @@ export type FullViewMode = 'dual' | 'chinese'
  */
 export type ReasoningEffort = 'omit' | 'none' | 'low' | 'high' | 'max'
 
+export interface ModelProfile {
+  baseUrl: string
+  apiKey: string
+  model: string
+  temperature: number
+  reasoning: ReasoningEffort
+}
 export interface Settings {
+  activeProvider: 'deepseek' | 'mimo' | 'custom'
+  providerConfigs: Record<'deepseek' | 'mimo' | 'custom', ModelProfile>
   /** OpenAI 兼容接口的 base，例如 https://api.deepseek.com/v1 */
   baseUrl: string
   apiKey: string

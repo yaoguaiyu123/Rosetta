@@ -4,7 +4,7 @@ import type { Settings } from '../types'
 import { DEFAULT_SYSTEM_PROMPT } from '../lib/prompt'
 import { defaultSettings, REASONING_OPTIONS } from '../lib/settings'
 import { listModels } from '../lib/deepseek'
-import { modelProvider, PROVIDER_PRESETS, type ModelProvider } from '../lib/providers'
+import { captureProviderSettings, cloneSettings, switchProvider, PROVIDER_PRESETS, type ModelProvider } from '../lib/providers'
 import { cacheCount, clearCache } from '../lib/cache'
 
 const props = defineProps<{ open: boolean; settings: Settings; configFile?: string }>()
@@ -13,28 +13,24 @@ const emit = defineEmits<{
   (e: 'save', value: Settings): void
 }>()
 
-const draft = reactive<Settings>({ ...props.settings })
+const draft = reactive<Settings>(cloneSettings(props.settings))
 const showKey = ref(false)
 const caches = ref(0)
 
-const provider = computed(() => modelProvider(draft.baseUrl, draft.model))
+const provider = computed(() => draft.activeProvider)
 const keyPlatform = computed(() => provider.value === 'mimo' ? PROVIDER_PRESETS.mimo : PROVIDER_PRESETS.deepseek)
 const reasoningOptions = computed(() => provider.value === 'mimo'
   ? REASONING_OPTIONS.filter(o => ['none', 'high', 'omit'].includes(o.value)).map(o => ({ ...o, label: o.value === 'high' ? '开启思考' : o.label }))
   : REASONING_OPTIONS)
 function chooseProvider(value: ModelProvider) {
-  if (value === 'custom') return
-  const preset = PROVIDER_PRESETS[value]
-  try {
-    if (new URL(draft.baseUrl).origin !== new URL(preset.baseUrl).origin) draft.apiKey = ''
-  } catch { draft.apiKey = '' }
-  draft.baseUrl = preset.baseUrl
-  draft.model = preset.model
-  draft.reasoning = 'none'
+  if (value === draft.activeProvider) return
+  Object.assign(draft, switchProvider(draft, value))
   modelGeneration++
   models.value = []
   modelState.value = 'idle'
   testState.value = 'idle'
+  testMessage.value = ''
+  modelError.value = ''
 }
 
 /** 当前选中的思考强度说明 */
@@ -54,7 +50,7 @@ watch(
   () => props.open,
   (open) => {
     if (!open) return
-    Object.assign(draft, props.settings)
+    Object.assign(draft, cloneSettings(props.settings))
     testState.value = 'idle'
     testMessage.value = ''
     caches.value = cacheCount()
@@ -88,9 +84,11 @@ async function loadModels() {
 }
 
 async function testConnection() {
+  const providerAtStart = draft.activeProvider, baseAtStart = draft.baseUrl, keyAtStart = draft.apiKey
   testState.value = 'testing'
   testMessage.value = ''
   await loadModels()
+  if (providerAtStart !== draft.activeProvider || baseAtStart !== draft.baseUrl || keyAtStart !== draft.apiKey) return
   if (modelState.value === 'ok') {
     testState.value = 'ok'
     testMessage.value = models.value.length
@@ -107,7 +105,8 @@ function restorePrompt() {
 }
 
 function resetAll() {
-  Object.assign(draft, { ...defaultSettings, apiKey: draft.apiKey })
+  const captured = captureProviderSettings(draft)
+  Object.assign(draft, cloneSettings(defaultSettings), captured)
 }
 
 function doClearCache() {
@@ -118,7 +117,7 @@ function doClearCache() {
 }
 
 function save() {
-  emit('save', { ...draft })
+  emit('save', cloneSettings({ ...draft, ...captureProviderSettings(draft) }))
 }
 </script>
 
@@ -135,8 +134,9 @@ function save() {
           <div class="field__label">翻译服务商</div>
           <div class="row row--wrap">
             <button v-for="(preset, id) in PROVIDER_PRESETS" :key="id" class="btn" :class="{ 'btn--on': provider === id }" :aria-pressed="provider === id" @click="chooseProvider(id)">{{ preset.label }}</button>
+            <button class="btn" :class="{ 'btn--on': provider === 'custom' }" :aria-pressed="provider === 'custom'" @click="chooseProvider('custom')">自定义接口</button>
           </div>
-          <p class="field__hint">也可手动填写其他 OpenAI 兼容接口。切换服务商后请填入对应的 API Key；默认关闭思考。</p>
+          <p class="field__hint">也可手动填写其他 OpenAI 兼容接口。每个服务商分别保存接口、Key、模型和思考设置；切换时自动恢复，不会覆盖另一家的配置。首次使用默认关闭思考。</p>
         </section>
         <section class="field">
           <label class="field__label" for="s-base">接口地址</label>
@@ -316,7 +316,7 @@ function save() {
               {{ testState === 'testing' ? '测试中…' : '测试连接' }}
             </button>
             <button class="btn" @click="doClearCache">清空翻译缓存（{{ caches }} 条）</button>
-            <button class="btn" @click="resetAll">恢复全部默认</button>
+            <button class="btn" @click="resetAll">恢复阅读默认</button>
           </div>
           <p v-if="testMessage" class="test-result" :class="`test-result--${testState}`">
             {{ testMessage }}

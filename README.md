@@ -4,7 +4,7 @@
 
 [下载 Release 便携版](https://github.com/yaoguaiyu123/Rosetta/releases) · [源码仓库](https://github.com/yaoguaiyu123/Rosetta) · [许可证](LICENSE)
 
-> 只想使用：下载 Release 的 **Windows x64 完整便携版 ZIP**，解压后双击 `Rosetta.exe`。仅阅读 PDF 无需 API Key；翻译需填写自己的 Key 并联网。GitHub 自动生成的 **Source code ZIP 是源码，不是便携版**。
+> 只想使用：下载 Release 的 **Windows x64 完整便携版 ZIP**，解压后双击 `Rosetta.exe`。仅阅读 PDF 无需 API Key；翻译需填写自己的 Key 并联网。DeepSeek 和小米 MiMo 的配置分别保存，可直接切换。GitHub 自动生成的 **Source code ZIP 是源码，不是便携版**。
 
 ## 先分清你使用的版本
 
@@ -133,7 +133,7 @@ Copy-Item .env.example .env
 两种版本都推荐使用同一套界面操作：
 
 1. 打开右上角「设置」，选择 **DeepSeek** 或 **小米 MiMo**。
-2. 填入该服务商自己的 API Key。切换接口来源会清空正在编辑的 Key，避免发给错误的平台。
+2. 填入该服务商自己的 API Key。DeepSeek、MiMo、自定义接口分别保存 Key、地址、模型、温度和思考选项；切换会恢复各自设置，不覆盖其他服务商。
 3. 点击「测试连接」，从返回的列表中选择可用的**文本模型**。
 4. 点击「保存」。设置窗口会显示配置文件的实际位置。
 
@@ -146,17 +146,40 @@ Copy-Item .env.example .env
 
 DeepSeek 和 MiMo **默认关闭思考**。MiMo 使用 `thinking.type=disabled`，其他接口使用 `reasoning_effort=none`；选择「不发送此参数」后由服务商决定默认行为，可能开启思考。MiMo 接入细节见 [说明](docs/mimo.md)。
 
+### 两家的 Key 怎么分别填写？
+
+在同一份配置文件中使用不同前缀，`ACTIVE_PROVIDER` 决定当前启用谁：
+
+```dotenv
+ACTIVE_PROVIDER="mimo"
+
+DEEPSEEK_BASE_URL="https://api.deepseek.com/v1"
+DEEPSEEK_API_KEY=""
+DEEPSEEK_MODEL="deepseek-flash"
+DEEPSEEK_REASONING="none"
+
+MIMO_BASE_URL="https://api.xiaomimimo.com/v1"
+MIMO_API_KEY=""
+MIMO_MODEL="mimo-v2.6-flash"
+MIMO_REASONING="none"
+```
+
+填写各自的 Key 后，切换只需要修改 `ACTIVE_PROVIDER`，或在设置中选择服务商并保存。`CUSTOM_*` 为自定义接口的独立位置。温度分别使用 `DEEPSEEK_TEMPERATURE` 和 `MIMO_TEMPERATURE`。
+
+旧版只有一组 `BASE_URL` / `API_KEY` / `MODEL` 的配置仍可读取；应用会按接口识别所属服务商，保存时迁移到对应前缀，不会把同一个 Key 自动分配给两家。便携版仍读取 `data/settings.env`，源码版仍读取根目录 `.env`。升级后可将旧配置文件复制到新版本相同位置，已有配置无需重新手工填写。
+
 ### 手动配置时的常用字段
 
 下面这些字段适用于两种版本，但必须写入前文说明的**对应配置文件**。
 
 | 字段 | 含义 |
 | --- | --- |
-| `BASE_URL` | 模型接口地址 |
-| `API_KEY` | 自己的 API Key |
-| `MODEL` | 账号可用的文本模型名 |
-| `REASONING` | `none` 关闭思考；`omit` 不发送思考参数 |
-| `TEMPERATURE` | 温度，默认 0.3；部分模型或思考模式会忽略它 |
+| `DEEPSEEK_BASE_URL` / `MIMO_BASE_URL` | 各自的模型接口地址 |
+| `DEEPSEEK_API_KEY` / `MIMO_API_KEY` | 各自的 API Key，不互相覆盖 |
+| `DEEPSEEK_MODEL` / `MIMO_MODEL` | 各自账号可用的文本模型名 |
+| `DEEPSEEK_REASONING` / `MIMO_REASONING` | `none` 关闭思考；`omit` 不发送思考参数 |
+| `DEEPSEEK_TEMPERATURE` / `MIMO_TEMPERATURE` | 各自的温度，默认 0.3 |
+| `ACTIVE_PROVIDER` | 当前使用 `deepseek` / `mimo` / `custom` |
 | `OUTPUT_DIR` | 全文译本目录；留空使用用户目录下的 `PDF译文` |
 | `TRIGGER` | `auto` 选中即翻，或 `shortcut` 按 Ctrl+Enter 翻译 |
 | `DEBOUNCE_MS` | 选中后自动翻译的等待时间，默认 1000 毫秒 |
@@ -220,7 +243,7 @@ DeepSeek 和 MiMo **默认关闭思考**。MiMo 使用 `thinking.type=disabled`�
 
 ### 填了 Key，重启后却显示未配置？
 
-先查看设置窗口中的「配置文件」路径。便携版应编辑 `data/settings.env`，源码版应编辑项目根目录 `.env`；**便携版根目录的 `.env` 会被忽略**。最简单的办法是在应用界面重新填写并保存。
+先查看设置窗口中的「配置文件」路径。便携版应编辑 `data/settings.env`，源码版应编辑项目根目录 `.env`；**便携版根目录的 `.env` 会被忽略**。再确认当前服务商对应的 Key 非空、模型名正确。401 表示 Key 未被服务商接受，通常需要检查是否填错、过期，或用了另一家的 Key。最简单的办法是在应用界面选择对应服务商，测试连接后保存。
 
 ### 关闭浏览器、关机后还需要重新填 Key 吗？
 

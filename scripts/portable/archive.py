@@ -7,8 +7,7 @@ assert root.name.startswith('Rosetta-') and (root/'Rosetta.exe').is_file()
 project=Path(__file__).resolve().parents[2]
 env=(project/'.env').read_text(encoding='utf-8') if (project/'.env').exists() else ''
 import re
-match=re.search(r'^API_KEY\s*=\s*(.*?)\s*$',env,re.M)
-key=(match.group(1).strip().strip('\"\'') if match else '').encode()
+keys=[match.group(1).strip().strip('\"\'').encode() for match in re.finditer(r'^(?:(?:DEEPSEEK|MIMO|CUSTOM)_)?API_KEY\s*=\s*(.*?)\s*$',env,re.M) if match.group(1).strip().strip('\"\'')]
 user=os.environ.get('USERNAME','').encode('utf-8')
 files=sorted(p for p in root.rglob('*') if p.is_file())
 for file in files:
@@ -16,7 +15,7 @@ for file in files:
     assert file.name not in ['.env','settings.env','cache.v1.db','server-ready.json'],relative
     assert file.suffix not in ['.pdf','.pyc','.pyo','.log'],relative
     content=file.read_bytes()
-    assert not key or key not in content, 'Configured key in package'
+    assert all(key not in content for key in keys), 'Configured key in package'
     assert not user or user not in content, 'Developer name in package: '+relative
 archive=root.parent/(root.name+'.zip')
 with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=6,allowZip64=True) as z:

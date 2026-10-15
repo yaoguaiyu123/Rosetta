@@ -11,7 +11,13 @@ assert.ok(existsSync(join(root,'Rosetta.exe')),'Provide an extracted portable pa
 const python=join(root,'.runtime/portable-python/python.exe')
 const node=join(root,'.runtime/node/node.exe')
 const data=join(root,'data')
-if(existsSync(join(data,'settings.env'))){assert.match(readFileSync(join(data,'settings.env'),'utf8'),/^API_KEY=""$/m,'Refuse to verify a package with a configured key')}
+if(existsSync(join(data,'settings.env'))){
+ const text=readFileSync(join(data,'settings.env'),'utf8')
+ for(const line of text.split(/\r?\n/))if(/^(?:(?:DEEPSEEK|MIMO|CUSTOM)_)?API_KEY\s*=/.test(line.trim())){
+  const value=line.slice(line.indexOf('=')+1).trim().replace(/^["']|["']$/g,'').trim()
+  assert.equal(value,'','Refuse to verify a package with a configured key')
+ }
+}
 function cleanup(){
  for(const file of ['launcher-smoke.json','settings.env','server-ready.json'])removeFile(join(data,file))
  for(const folder of ['engine-config','jobs','tmp','verification','cache/pdf2zh_next']){const path=join(data,folder);if(existsSync(path))removeTreeWithin(path,root)}

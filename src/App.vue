@@ -22,7 +22,7 @@ import type { FullViewMode, ReaderMode } from './types'
 import { createFullTranslation, FULL_TRANSLATION_PAGE_LIMIT, type FullTranslationProgress } from './lib/fullTranslationClient'
 import { findSavedTranslation, loadSavedTranslation, type SavedTranslation } from './lib/savedTranslation'
 import type { PdfFileHandle } from './lib/fileAccess'
-import { modelProvider, PROVIDER_PRESETS } from './lib/providers'
+import { captureProviderSettings, PROVIDER_PRESETS } from './lib/providers'
 import { nextPdfZoom } from './lib/pdfZoom'
 
 const viewer = ref<InstanceType<typeof PdfViewer> | null>(null)
@@ -90,7 +90,7 @@ const outlineOpen = ref(true)
 
 const translation = useTranslation(() => settings)
 
-const keyPlatform = computed(() => modelProvider(settings.baseUrl, settings.model) === 'mimo' ? PROVIDER_PRESETS.mimo : PROVIDER_PRESETS.deepseek)
+const keyPlatform = computed(() => settings.activeProvider === 'mimo' ? PROVIDER_PRESETS.mimo : PROVIDER_PRESETS.deepseek)
 const hasApiKey = computed(() => settings.apiKey.trim().length > 0)
 /** 护眼蒙版的 CSS 颜色；'transparent' 表示原色 */
 const pageTintColor = computed(() => tintColor(settings.pageTint))
@@ -117,7 +117,8 @@ async function persistToFile() {
 }
 
 function applySettings(next: Settings) {
-  Object.assign(settings, next)
+  translation.cancel()
+  Object.assign(settings, next, captureProviderSettings(next))
   settingsOpen.value = false
   // 显式点保存时立即落盘，不等防抖
   window.clearTimeout(persistTimer)

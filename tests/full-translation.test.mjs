@@ -153,3 +153,13 @@ test('portable runtime selects bundled Python and keeps jobs/cache/temp paths in
   assert.equal(child.spawnOptions.env.PYTHONHOME,join(f.root,'.runtime/portable-python'))
   assert.ok(child.request.input.startsWith(join(f.root,'data','jobs')))
 })
+
+test('full translation forwards the selected MiMo profile to the worker',async t=>{
+ const f=await fixture(t)
+ f.config.activeProvider='mimo';f.config.baseUrl='https://api.xiaomimimo.com/v1';f.config.model='mimo-v2.6-flash';f.config.reasoning='none'
+ const initial=await f.create();const result=await f.wait(initial.data.id)
+ assert.equal(result.status,'done')
+ assert.equal(f.children[0].request.config.baseUrl,'https://api.xiaomimimo.com/v1')
+ assert.equal(f.children[0].request.config.model,'mimo-v2.6-flash')
+ assert.equal(f.children[0].request.config.reasoning,'none')
+})
