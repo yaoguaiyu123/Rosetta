@@ -1,144 +1,278 @@
-# 译读 · PDF 翻译阅读器
+# Rosetta · 译读
 
-源码仓库：[yaoguaiyu123/Rosetta](https://github.com/yaoguaiyu123/Rosetta)。
+在本机运行、通过浏览器使用的 PDF 阅读与翻译工具。支持划词翻译、全文中英对照，以及可以保存到 PDF 的文字高亮。
 
-在本机运行、通过浏览器使用的 PDF 阅读与翻译工具。Vue 3 提供界面，PDF.js 显示文档；全文翻译由 PDFMathTranslate-next 完成解析、翻译和排版。
+[下载 Release 便携版](https://github.com/yaoguaiyu123/Rosetta/releases) · [源码仓库](https://github.com/yaoguaiyu123/Rosetta) · [许可证](LICENSE)
 
-## 功能
+> 只想使用：下载 Release 的 **Windows x64 完整便携版 ZIP**，解压后双击 `Rosetta.exe`。仅阅读 PDF 无需 API Key；翻译需填写自己的 Key 并联网。GitHub 自动生成的 **Source code ZIP 是源码，不是便携版**。
 
-- **划词翻译**：选中英文后流式显示中文，也可用 Ctrl + Enter 触发；支持编辑原文、重试与缓存。
-- **全文翻译**：支持 40 页及以下的文字型 PDF，生成中文单版（mono）和中英对照版（dual）；支持进度、取消、复用及重新翻译。
-- **PDF 高亮**：划选文字添加高亮，橡皮擦点击擦除；Ctrl + Z 撤销，Ctrl + S 写入 PDF，退出不自动保存。
-- **阅读**：暗色界面、页面色调、虚拟滚动、页码跳转和适应宽度。划词模式显示 PDF 自带的书签目录，无书签时不生成目录。
-- **缩放**：Ctrl + 滚轮或 Shift + 滚轮缩放 PDF；按钮每档 5%，范围 25%–300%。
-- **本地启动**：Windows 可通过启动脚本或桌面快捷方式打开，无需注册账号。
-- **模型配置**：使用自己的 API Key，支持 DeepSeek、小米 MiMo 和其他 OpenAI 兼容接口；DeepSeek 与 MiMo 默认关闭思考。
+## 先分清你使用的版本
 
-## 普通用户：下载便携版
+| | Release 便携版 | 源码版 |
+| --- | --- | --- |
+| 面向谁 | 想解压即用的 Windows 用户 | 想运行、修改或开发源码的用户 |
+| 从哪里获取 | Releases 中的 `Rosetta-版本-windows-x64-portable.zip` | Git 克隆仓库，或下载 Source code |
+| 如何启动 | 双击解压目录中的 `Rosetta.exe` | 安装依赖、构建后运行本地服务；也可用 `启动.bat` |
+| 需要自己安装环境吗 | 不需要安装 Node.js、uv 或 Python，模型和字体已包含 | 需要 Node.js；全文翻译还需用 uv 准备引擎 |
+| **真正使用的配置文件** | **EXE 同目录下的 `data/settings.env`** | **项目根目录下的 `.env`** |
+| 界面里保存设置后写到哪里 | `data/settings.env` | `.env` |
 
-打开 [GitHub Releases](https://github.com/yaoguaiyu123/Rosetta/releases)，下载 Windows x64 完整便携版 ZIP，完整解压后双击 **Rosetta.exe**。不需要安装 Node.js、uv 或 Python，模型和字体已包含；首次使用时，应用会提醒填写自己的 DeepSeek 或小米 MiMo API Key，并提供申请链接与「打开设置」按钮；测试连接、选择模型后保存即可。仅阅读 PDF 无需配置。
+**两种文件格式相同，位置不同。便携版不会读取根目录的 `.env`；把 Key 填在那里不会生效。** 以下配置路径均按默认启动方式说明，开发时可用 `--env` 指定其他文件。
 
-便携版仍通过浏览器阅读，翻译需要联网调用你配置的模型服务。配置和缓存保存在解压目录的 data，译本目录可在设置中修改。退出启动窗口或托盘中的 Rosetta 会停止服务。详见 [便携版说明](docs/portable-release.md)。
+## 目录
 
-以下为开发者从源码运行的方式。
+- [一、Release 便携版：解压即用](#一release-便携版解压即用)
+- [二、源码版：安装与启动](#二源码版安装与启动)
+- [三、配置 DeepSeek 或小米 MiMo](#三配置-deepseek-或小米-mimo)
+- [四、阅读、翻译和高亮](#四阅读翻译和高亮)
+- [五、文件位置、迁移和隐私](#五文件位置迁移和隐私)
+- [六、常见问题](#六常见问题)
+- [七、开发与打包](#七开发与打包)
+- [八、许可证](#八许可证)
 
-## 环境要求
+## 一、Release 便携版：解压即用
 
-- 推荐 **Node.js 24 LTS**，最低 22.13.0（由当前 PDF.js 和构建工具决定）。
-- 首次安装全文翻译引擎需要 [uv](https://docs.astral.sh/uv/getting-started/installation/) 和网络连接。
-- 安装脚本会准备独立 Python 3.12 环境、引擎、版面模型及字体，无需手动安装系统 Python。
-- 当前验证平台为 Windows + Edge/Chrome。全文翻译使用 CPU，论文评估中引擎峰值内存约 2–3 GB，实际用量随文档变化。
+适用平台：**Windows 10/11 x64**，推荐使用 Edge 或 Chrome。
 
-## 快速开始
+### 下载和启动
 
-在项目根目录执行：
+1. 打开 [GitHub Releases](https://github.com/yaoguaiyu123/Rosetta/releases)，选择需要的版本。
+2. 下载名称包含 `windows-x64-portable.zip` 的完整便携包。
+3. **完整解压**到可写文件夹，再双击 `Rosetta.exe`；不要在压缩包内直接运行。
+4. 阅读器会在系统浏览器中打开。可直接打开 PDF 阅读；需要翻译时再配置 API Key。
+
+不需要运行 npm 命令，不需要安装 Node.js、uv 或 Python，也不需要首次下载模型与字体。便携包较大，因为已包含这些运行文件。
+
+### 便携版的配置在哪里？
+
+```text
+Rosetta-版本-windows-x64-portable/
+├─ Rosetta.exe
+├─ data/
+│  ├─ settings.env    ← 唯一的便携版应用配置，首次启动自动创建
+│  ├─ cache/          ← 模型、字体及翻译缓存
+│  ├─ jobs/           ← 全文任务临时文件，运行时创建
+│  └─ tmp/            ← 运行时临时文件
+└─ source/            ← 随包提供的项目源码，普通用户无需操作
+```
+
+推荐在阅读器右上角的「设置」中填写并保存，程序会自动写入 `data/settings.env`。也可退出应用后手动编辑这个文件，再重新启动。
+
+- 根目录的 `.env` **不参与便携版启动**。
+- 新版启动器内置空 Key 的默认配置，根目录不再需要 `.env.example`。旧发布包可能仍带此模板，它也不是实际填写 Key 的位置。
+- `source/.env.example` 属于随包提供的**源码模板**，不是便携版的配置入口。
+- 可以在设置窗口的「配置文件」一项查看当前实际读取的完整路径。
+
+### 怎样退出、迁移或升级？
+
+- 关闭浏览器页面不会停止本地服务；在启动窗口或托盘菜单选择「退出 Rosetta」才会停止。
+- 迁移时先退出，再移动**整个解压文件夹**。
+- 升级时先解压新版本并退出旧版本。复制旧版的 `data/settings.env` 到新版同一位置，即可保留 API 设置；首次未启动过新版时，可自行创建 `data` 文件夹。
+- 不要用旧 `data` 整体覆盖新版文件。模型、字体已经随新版提供；如需迁移其他缓存，请保留新版资源并单独处理。
+- 默认输出的译本位于用户目录的 `PDF译文`，不在程序目录，迁移程序不会自动移动这些论文。
+
+更多构建和许可细节见 [便携版说明](docs/portable-release.md)。
+
+## 二、源码版：安装与启动
+
+### 环境准备
+
+- 推荐 **Node.js 24 LTS**，最低版本为 **22.13.0**；npm 随 Node.js 安装。
+- 需要全文翻译时，先安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)。引擎安装脚本会准备独立的 Python 3.12 环境，无需另行手动安装系统 Python。
+- 首次安装依赖、引擎、模型和字体需要网络连接。
+
+### 第一次运行
+
+获取源码并准备环境。下面的命令会创建 `Rosetta` 文件夹；已有源码时，进入现有项目根目录，从 `npm ci` 开始：
 
 ```sh
+git clone https://github.com/yaoguaiyu123/Rosetta.git
+cd Rosetta
 npm ci
 npm run setup:engine
 npm run build
 npm run serve
 ```
 
-只使用划词阅读时，可跳过 `setup:engine`；已安装全文引擎无需重复安装。
+| 命令 | 用途 | 什么时候运行 |
+| --- | --- | --- |
+| `npm ci` | 按锁定版本安装前端依赖 | 首次运行，或依赖变更后 |
+| `npm run setup:engine` | 安装全文翻译环境并准备模型、字体 | 首次使用全文翻译；只有阅读和划词翻译时可跳过 |
+| `npm run build` | 构建可运行的前端文件 | 首次运行，或更新前端源码后 |
+| `npm run serve` | 启动本地服务并打开浏览器 | 每次使用时 |
 
-Windows 也可双击 `启动.bat`，它会检查环境、必要时构建并打开浏览器。创建桌面快捷方式：
+准备完成后，日常只需在项目根目录执行 `npm run serve`，或双击 `启动.bat`。启动脚本负责检查 Node.js、必要时构建并启动服务；**它不代替首次的依赖安装和引擎准备**。更新源码后应重新运行 `npm run build`，避免继续使用旧构建结果。
 
-```sh
-npm run shortcut:desktop
+运行 `npm run serve` 时，在服务终端按 Ctrl+C 可停止服务。
+
+需要桌面快捷方式时执行 `npm run shortcut:desktop`；移动源码目录后需重新创建。详见 [桌面启动说明](docs/desktop-shortcut.md)。
+
+### 源码版的配置在哪里？
+
+```text
+Rosetta/                    ← 克隆后的项目根目录
+├─ package.json
+├─ server.mjs
+├─ 启动.bat
+├─ .env.example             ← 源码版配置模板，Key 为空
+└─ .env                     ← 源码版实际读取的配置
 ```
 
-移动项目目录后需重新创建快捷方式。详见 [桌面启动说明](docs/desktop-shortcut.md)。
+推荐在应用「设置」中填写后保存，程序会创建或更新根目录 `.env`。也可先复制模板再手动填写：
 
-## 配置翻译服务
+```powershell
+Copy-Item .env.example .env
+```
 
-打开右上角「设置」，填写接口地址、API Key 和模型，测试连接后保存。DeepSeek 的 Key 可在 [DeepSeek 平台](https://platform.deepseek.com/) 申请，小米 MiMo 的 Key 可在 [MiMo 平台](https://platform.xiaomimimo.com/#/console/api-keys) 申请。在设置中选择服务商会自动填写接口和示例模型，默认关闭思考，模型以连接测试返回的列表为准。其他服务需提供兼容接口。
+已有 `.env` 时直接编辑，不要重复用模板覆盖。手动改完配置后刷新阅读器；端口等启动参数变更需要重启服务。
 
-也可将 `.env.example` 复制为 `.env` 后编辑。磁盘配置优先于浏览器设置，设置页面保存时会写回 `.env`。
+不能直接双击 `dist/index.html` 使用：PDF.js 的模块 Worker 和资源需要通过本地 HTTP 服务加载。
 
-| 配置 | 说明 |
+## 三、配置 DeepSeek 或小米 MiMo
+
+两种版本都推荐使用同一套界面操作：
+
+1. 打开右上角「设置」，选择 **DeepSeek** 或 **小米 MiMo**。
+2. 填入该服务商自己的 API Key。切换接口来源会清空正在编辑的 Key，避免发给错误的平台。
+3. 点击「测试连接」，从返回的列表中选择可用的**文本模型**。
+4. 点击「保存」。设置窗口会显示配置文件的实际位置。
+
+| 服务商 | 默认接口地址 | 获取 API Key |
+| --- | --- | --- |
+| DeepSeek | `https://api.deepseek.com/v1` | [DeepSeek 开放平台](https://platform.deepseek.com/) |
+| 小米 MiMo | `https://api.xiaomimimo.com/v1` | [小米 MiMo 开放平台](https://platform.xiaomimimo.com/#/console/api-keys) |
+
+也支持手动填写其他 OpenAI 兼容接口。模型名称和权限以服务商及你的账号为准；Token Plan 等套餐请使用平台提供的专用接口和对应 Key。
+
+DeepSeek 和 MiMo **默认关闭思考**。MiMo 使用 `thinking.type=disabled`，其他接口使用 `reasoning_effort=none`；选择「不发送此参数」后由服务商决定默认行为，可能开启思考。MiMo 接入细节见 [说明](docs/mimo.md)。
+
+### 手动配置时的常用字段
+
+下面这些字段适用于两种版本，但必须写入前文说明的**对应配置文件**。
+
+| 字段 | 含义 |
 | --- | --- |
-| `PORT` | 服务端口，默认 5199；占用时尝试其他端口 |
-| `BASE_URL` | 接口地址，默认 `https://api.deepseek.com/v1` |
-| `API_KEY` | 自己的 Key，模板中为空 |
-| `MODEL` | 模型名；以服务商和连接测试返回的可用列表为准 |
-| `TEMPERATURE` | 默认 0.3，部分模型可能不支持 |
-| `REASONING` | 默认 `none`；MiMo 自动使用 `thinking.type=disabled`，其他接口使用 `reasoning_effort`；`omit` 不发送思考参数 |
-| `TRIGGER` | `auto` 选中即翻，或 `shortcut` 使用 Ctrl + Enter |
-| `DEBOUNCE_MS` | 自动翻译等待时间，默认 1000 毫秒 |
-| `DEFAULT_ZOOM` | 初始缩放，默认 1.5 |
-| `PAGE_TINT` | `none` / `green` / `yellow` / `sepia` |
-| `OUTPUT_DIR` | 译本目录；为空时使用用户目录下的 `PDF译文` |
-| `SYSTEM_PROMPT` | 划词提示词，留空使用内置值 |
+| `BASE_URL` | 模型接口地址 |
+| `API_KEY` | 自己的 API Key |
+| `MODEL` | 账号可用的文本模型名 |
+| `REASONING` | `none` 关闭思考；`omit` 不发送思考参数 |
+| `TEMPERATURE` | 温度，默认 0.3；部分模型或思考模式会忽略它 |
+| `OUTPUT_DIR` | 全文译本目录；留空使用用户目录下的 `PDF译文` |
+| `TRIGGER` | `auto` 选中即翻，或 `shortcut` 按 Ctrl+Enter 翻译 |
+| `DEBOUNCE_MS` | 选中后自动翻译的等待时间，默认 1000 毫秒 |
+| `DEFAULT_ZOOM` | 打开 PDF 的初始缩放，默认 1.5，即 150% |
+| `PAGE_TINT` | `none` 原色、`green` 护眼绿、`yellow` 淡黄、`sepia` 羊皮纸 |
+| `SYSTEM_PROMPT` | 划词翻译提示词；留空使用内置值 |
+| `PORT` | 源码服务的默认端口；便携启动器自动选择端口 |
 
-模型名称、参数支持及计费由服务商决定。项目不提供共享密钥，也不提供离线文字翻译模型。
+**读取优先级：本地配置文件高于浏览器 `localStorage`。** 浏览器存储是副本和读取失败时的回退，不能用来判断你是否编辑了正确的文件。文件中明确写空的字段会覆盖浏览器里的旧值。
 
-## PDF 高亮与保存
+## 四、阅读、翻译和高亮
 
-工具栏依次提供选择、高亮、橡皮擦、撤销和保存。高亮和擦除模式下不会自动触发划词翻译。高亮是标准 PDF 批注，保存后可在其他 PDF 阅读器中查看。
+### 日常阅读与划词翻译
 
-通过「打开 PDF」选择文件后，Ctrl + S 可申请授权并保存回原文件；拖入文件或编辑生成的译本时，首次保存通常需要选择保存位置，可选回原文件覆盖。浏览器不支持直接写入时，会下载编辑后的 PDF，并明确提示手动替换原文件。
+- 拖入或打开 PDF。划词模式下选中英文即可翻译，也可在设置中改成 Ctrl+Enter 触发。
+- 显示 PDF 自带的书签目录；没有书签时不生成目录。
+- Ctrl+滚轮缩放 PDF，也支持 Shift+滚轮。工具栏按钮每档 5%，范围 25%–300%。
+- 可切换暗色界面下的页面色调、收起翻译栏、按窗口宽度缩放或输入页码跳转。
 
-编辑只保存在当前会话，退出或刷新不自动写入。Ctrl + Z 可撤销上一步，包括保存后的操作；撤销后需再次 Ctrl + S 才会更新磁盘文件。打开另一个 PDF 或切换中英/中文译本会提示丢弃未保存编辑。详见 [高亮说明](docs/pdf-highlights.md)。
+### 全文翻译
 
-## 全文翻译与保存
+1. 打开英文 PDF，切换到「全文翻译」。仅支持 **40 页及以下、有文字层的 PDF**。
+2. 检测到匹配的完整译本时，可「打开已有译本」继续阅读；否则点击「翻译全文」。
+3. 引擎会生成两份 PDF：
+   - **只看中文**：`.mono.pdf`。
+   - **中英对照**：`.dual.pdf`，同一页左英右中，是一份 PDF，不是两个独立滚动窗口。
+4. 切换阅读模式会保留当前译本；「重新翻译」会重新生成，成功后替换旧配对，失败或取消则保留旧结果。
+5. 译本默认自动保存到 `%USERPROFILE%\PDF译文`。可在设置中自定义，不可写时回退到用户目录，界面会显示实际位置。
 
-1. 打开英文 PDF，切换到「全文翻译」。超过 40 页时不能启动全文翻译。
-2. 有原文指纹匹配的完整配对时，点击「打开已有译本」，无需再次翻译。
-3. 点击「翻译全文」生成 mono 和 dual 两份 PDF。本机服务同时运行一个全文任务。
-4. 「中英对照」显示 `.dual.pdf`，每页左英右中；「只看中文」显示 `.mono.pdf`。对照版是单个 PDF，不是两个独立滚动窗格。
-5. 切换显示方式或切回划词模式后再返回，会保留译本。点击「重新翻译」才绕过文字缓存重新生成；成功后替换配对，失败或取消保留原有结果。
-6. 默认目录为 `%USERPROFILE%\PDF译文`。可自定义其他目录，不可用时回退到用户目录；界面显示实际保存位置，也可下载当前版本。
+译本通过原文完整 SHA-256 指纹匹配，文件名包含指纹前 16 位；同名而内容不同的 PDF 不会混为一份。旧排版方式只生成的单个中文 PDF 不能作为新引擎的完整配对复用。本机服务同时运行一个全文任务。
 
-文件名包含原文 SHA-256 的前 16 位，索引保存完整指纹，不同内容的同名文件不会被视为同一份文档。旧排版方式生成的单一中文文件不能作为新引擎的完整配对复用。
+### 高亮、擦除与保存
 
-## 隐私与费用
+- 点击高亮工具，划选文字添加标准 PDF 高亮批注。
+- 点击橡皮擦，再点击一条高亮即可擦除。两种编辑工具下不会自动触发划词翻译。
+- **Ctrl+Z** 撤销上一步；**Ctrl+S** 或保存按钮才把编辑写入 PDF。
+- 退出或刷新**不自动保存高亮**。保存后再撤销，也需要再次保存才能更新磁盘文件。
+- 用 Edge/Chrome 的「打开 PDF」选择文件后，保存时可授权写回原文件；拖入文件或编辑译本时，首次保存通常需要选择位置，可选原文件覆盖。
+- 浏览器不支持直接写入时，会下载编辑后的 PDF，并提示手动替换原文件。
 
-- 阅读、全文解析和排版在本机完成。**待翻译文字会发送到配置的模型服务**，费用由用户承担，服务商的数据政策适用于这些请求。
-- 版面识别使用本地 ONNX 模型，它不负责文字翻译；首次安装需要下载软件、模型及字体。
-- API Key 保存在本机 `.env`，浏览器 `localStorage` 也保存设置副本，均为明文。请勿分享真实配置、浏览器配置目录或含密钥的日志。
-- 文字缓存位于用户目录的 `.cache/pdf2zh_next`，模型与字体位于 `.cache/babeldoc`；缓存可能包含文档文字及译文。
-- 独立环境在 `.runtime/pdf2zh-next/.venv`，Python 和安装缓存在 `.runtime/python`、`.runtime/uv-cache`。任务临时文件位于 `.runtime/pdf2zh-next/jobs`，任务结束后清理。
-- `.env`、运行环境、输出论文及临时文件不纳入 Git。项目为本机使用设计，不应直接暴露到公网或作为多用户服务部署。
+**全文译本的自动导出，与高亮编辑的手动保存是两件独立的事。** 高亮保存在 PDF 内，保存后可用其他阅读器查看。详见 [高亮说明](docs/pdf-highlights.md)。
 
-## 已知限制
+## 五、文件位置、迁移和隐私
 
-- 不提供扫描件 OCR；划词需要文字层，全文翻译主要面向可提取英文文字的论文。
-- PDF 提取可能损坏数学符号，公式保护不能保证所有行内公式正确，请对照原文。
-- 引擎采用原位排版，复杂多栏、表格、图内文字、题名、作者和参考文献仍可能被误识别或重排；关闭表格文字翻译不代表整张表格不变。
-- 不保证统一增大中文字号，也不提供允许增页的自由重排模式。
-- 不提供云同步，Linux/macOS 的启动和快捷方式尚未完成验证。
+| 内容 | Release 便携版 | 源码版 |
+| --- | --- | --- |
+| 应用配置 / API Key | `data/settings.env` | 项目根目录 `.env` |
+| 模型、字体、CMap 等资源 | `data/cache/babeldoc` | 用户目录 `.cache/babeldoc` |
+| 全文翻译文字缓存 | `data/cache/pdf2zh_next`，部分引擎缓存位于 `data/cache/babeldoc` | 用户目录 `.cache/pdf2zh_next`，部分引擎缓存位于 `.cache/babeldoc` |
+| 全文任务临时文件 | `data/jobs`，任务结束后清理 | `.runtime/pdf2zh-next/jobs`，任务结束后清理 |
+| 引擎运行环境 | `.runtime/portable-python` | `.runtime/pdf2zh-next/.venv` |
+| 默认译本目录 | 用户目录的 `PDF译文` | 用户目录的 `PDF译文` |
 
-详见 [论文评估](docs/pdf2zh-next-evaluation.md)、[引擎接入](docs/engine-integration.md)、[阅读控制](docs/reader-controls.md)。评估译本不随源码发布。
+- PDF 阅读、全文解析和排版在本机完成；**待翻译文字会发给你配置的模型服务**。模型和字体在本地不等于离线大模型翻译。
+- 翻译需要联网，由服务商计费，项目不提供共享 Key。
+- 配置文件和浏览器设置副本中的 Key 都是明文。不要分享真实配置、使用过的 `data` 文件夹或浏览器配置目录；文字缓存也可能含有论文内容。
+- 源码版的 `.env`、运行环境、论文输出和临时文件已排除在 Git 之外。
+- 当前程序面向本机使用，不应直接暴露到公网或作为多用户服务部署。
 
-## 开发
+## 六、常见问题
 
-```sh
-npm run dev           # 开发
-npm run type-check    # 类型检查
-npm run test:engine   # 全文任务、保存、复用、取消与回退测试
-npm run test:reader   # 缩放测试
-npm run build         # 同步 PDF.js 资源并构建
-npm run audit:release # 当前受跟踪文件和本地 Git 对象的密钥候选检查
-```
+### 填了 Key，重启后却显示未配置？
 
-上述单元测试不调用外部模型。浏览器验收工具在 `.workbuddy/tools/`，请配合独立服务配置、浏览器配置目录和 mock 接口使用。`scripts/evaluate-pdf2zh-next.py --input <文件.pdf>` 会调用真实翻译服务并产生费用。
+先查看设置窗口中的「配置文件」路径。便携版应编辑 `data/settings.env`，源码版应编辑项目根目录 `.env`；**便携版根目录的 `.env` 会被忽略**。最简单的办法是在应用界面重新填写并保存。
+
+### 关闭浏览器、关机后还需要重新填 Key 吗？
+
+正常不需要。配置文件会保留，启动时自动读取。浏览器 `localStorage` 通常也能跨重启保留，但换浏览器、换端口或清除网站数据后可能读不到；本地配置文件仍是主要来源。
+
+### 下载便携版后还需要运行 npm 命令吗？
+
+不需要。完整解压后运行 `Rosetta.exe` 即可。如果你拿到的是 Source code ZIP，请重新下载 Release 中明确标为 portable 的附件。
+
+### 翻译模型和字体都打包了，为什么还需要 API Key？
+
+打包的 ONNX 模型负责识别页面布局，文字翻译由 DeepSeek、MiMo 或其他已配置的在线模型完成，两者用途不同。
+
+### 为什么高亮退出后没了？
+
+高亮不会自动保存。退出前按 Ctrl+S，并确认保存成功；若浏览器采用下载方式，请打开下载的那份 PDF。
+
+### 全文翻译有哪些限制？
+
+不支持扫描件 OCR。复杂多栏、表格、图内文字、题名、作者和参考文献仍可能被误识别或重排，行内公式也不能保证全部正确，需要对照原文。当前不提供允许增页的自由重排或统一增大中文字号。全文翻译使用 CPU，论文评估时引擎峰值内存约 2–3 GB，实际随文档变化。
+
+Linux/macOS 的启动和快捷方式尚未完成验证。更多技术边界见 [论文评估](docs/pdf2zh-next-evaluation.md)、[引擎接入](docs/engine-integration.md) 和 [阅读控制](docs/reader-controls.md)。
+
+## 七、开发与打包
+
+前端使用 Vue 3 + PDF.js；全文处理使用 PDFMathTranslate-next，负责解析、调用翻译服务和排版。应用由本地 Node.js 服务提供页面及任务接口。
+
+| 命令 | 用途 |
+| --- | --- |
+| `npm run dev` | 启动 Vite 开发服务器，已接入本地配置和全文翻译接口 |
+| `npm run type-check` | TypeScript 类型检查 |
+| `npm run test:reader` | 缩放、高亮状态与模型协议测试 |
+| `npm run test:engine` | 全文任务、保存、复用、取消与回退测试 |
+| `npm run build` | 同步 PDF.js 资源并构建前端 |
+| `npm run audit:release` | 检查受跟踪文件及本地 Git 对象中的密钥候选 |
+| `npm run build:portable` | 在已准备好环境的 Windows 构建机生成完整便携目录 |
+
+便携构建默认输出到源码目录的 `release`。可用 `npm run build:portable -- -OutputRoot <目录>` 指定其他输出目录。启动器将默认配置内置到 EXE，首次启动创建 `data/settings.env`；源码模板仍保留在源码内。
+
+上面的回归测试不调用付费模型。浏览器验收工具位于 `.workbuddy/tools/`，应使用独立配置与模拟接口。`scripts/evaluate-pdf2zh-next.py --input <文件.pdf>` 会调用真实翻译服务并产生费用。
 
 | 路径 | 用途 |
 | --- | --- |
-| `src/` | Vue 界面、PDF.js、划词翻译及设置 |
-| `server.mjs`、`server/` | 本地服务、全文任务及配对保存 |
-| `scripts/` | 资源同步、引擎安装、Python worker、快捷方式及发布检查 |
+| `src/` | Vue 界面、PDF.js、划词翻译、高亮及设置 |
+| `server.mjs`、`server/` | 本地服务、全文任务及译本保存 |
+| `scripts/` | 资源同步、引擎安装、Python worker、快捷方式及打包 |
 | `tests/` | 无需真实模型的回归测试 |
-| `docs/` | 接入、评估与操作记录 |
+| `docs/` | 接入、评估与操作说明 |
 | `licenses/` | 第三方原始许可及依赖清单 |
 
-应用需通过本地 HTTP 服务运行，不能直接双击构建后的 `index.html`；模块 Worker 和 PDF.js 资源需要正确的来源与 MIME 类型。
+## 八、许可证
 
-## 许可证
+本项目原创代码采用 **GNU AGPL v3，仅第 3 版（SPDX: AGPL-3.0-only）**，见 [LICENSE](LICENSE) 和 [COPYRIGHT](COPYRIGHT)。修改或分发时应保留许可与声明；修改版本通过网络提供交互时，须按 AGPL 第 13 条提供对应源码获取方式。
 
-本项目原创代码采用 **GNU AGPL v3，仅第 3 版（SPDX: AGPL-3.0-only）**，见 [LICENSE](LICENSE) 和 [COPYRIGHT](COPYRIGHT)。修改或分发时应保留许可与声明；修改版本通过网络提供交互时，须按 AGPL 第 13 条提供对应源码的获取方式。
-
-第三方组件保留各自许可，见 [第三方许可说明](THIRD_PARTY_NOTICES.md)。模型权重、字体及论文有各自许可，不因本项目许可证而自动变为 AGPL。
-
-发布检查范围和历史隐私说明见 [发布检查记录](docs/release-audit.md)。
+第三方软件、模型权重、字体及论文保留各自许可，不会自动变为 AGPL。详见 [第三方许可说明](THIRD_PARTY_NOTICES.md) 和 [发布检查记录](docs/release-audit.md)。评估论文及译本不随源码发布。

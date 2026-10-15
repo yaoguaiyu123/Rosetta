@@ -37,7 +37,13 @@ internal sealed class Rosetta : Form {
         if (!File.Exists(node) || !File.Exists(python) || !File.Exists(Path.Combine(Root,"dist","index.html")))
             throw new Exception("文件不完整，请完整解压下载的压缩包后再启动。");
         var config = Path.Combine(Data,"settings.env");
-        if (!File.Exists(config)) File.Copy(Path.Combine(Root,".env.example"),config);
+        if (!File.Exists(config)) {
+            using (var resource = typeof(Rosetta).Assembly.GetManifestResourceStream("Rosetta.DefaultSettings.env")) {
+                if (resource == null) throw new Exception("启动器缺少内置默认配置，请重新下载完整便携版。");
+                using (var reader = new StreamReader(resource, Encoding.UTF8))
+                    File.WriteAllText(config, reader.ReadToEnd(), new UTF8Encoding(false));
+            }
+        }
         if (File.Exists(Ready)) File.Delete(Ready);
         int port = 5199;
         for (;port < 5299;port++) {

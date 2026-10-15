@@ -64,7 +64,7 @@ def main():
         if relative.startswith(('.workbuddy/', 'release/', 'tmp/', '.runtime/')): continue
         if relative == '.env' or (path.suffix in ['.pdf','.log']): raise RuntimeError('Private output in source inventory')
         if (ROOT/path).is_file(): copy(ROOT/path, output/'source'/path)
-    for relative in ['server.mjs','server/full-translation.mjs','server/files.mjs','scripts/pdf2zh-worker.py','.env.example','LICENSE','COPYRIGHT','THIRD_PARTY_NOTICES.md']:
+    for relative in ['server.mjs','server/full-translation.mjs','server/files.mjs','scripts/pdf2zh-worker.py','LICENSE','COPYRIGHT','THIRD_PARTY_NOTICES.md']:
         copy(ROOT/relative, output/relative)
     clean_copy(ROOT/'dist', output/'dist')
     clean_copy(ROOT/'licenses', output/'licenses')
@@ -165,9 +165,16 @@ def main():
                 copy(mupdf_source,output/'source/third-party'/mupdf_source.name)
                 source_records.append({'name':'MuPDF','version':mupdf_version,'url':mupdf_url,'sha256':hashlib.sha256(mupdf_source.read_bytes()).hexdigest()})
     (output/'source/third-party/SOURCES.json').write_text(json.dumps(source_records,indent=2)+'\n',encoding='utf-8')
+    # Only the source tree ships .env.example. The launcher embeds portable defaults.
+    defaults = DOWNLOADS / 'portable-default-settings.env'
+    source_template = (ROOT/'.env.example').read_text(encoding='utf-8')
+    body = source_template[source_template.index('# 服务端口'):].replace('.env', 'data/settings.env')
+    defaults.write_text('# Rosetta 便携版配置：位于 EXE 同目录的 data/settings.env。\n# 在阅读器设置中保存会更新本文件；根目录的 .env 不参与便携版启动。\n\n' + body, encoding='utf-8')
+    # Remove the obsolete runtime template when resuming an interrupted older build.
+    (output/'.env.example').unlink(missing_ok=True)
     csc=Path(os.environ['SystemRoot'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-    run([csc,'/nologo','/target:winexe','/platform:x64','/optimize+',f'/out:{output / "Rosetta.exe"}',f'/win32icon:{ROOT / "assets/desktop/reader.ico"}','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.Web.Extensions.dll',ROOT/'scripts/portable/Launcher.cs'])
-    (output/'开始使用.txt').write_text('Rosetta · 译读（Windows 10/11 x64 完整便携版）\n\n1. 将整个压缩包解压到可写文件夹，双击 Rosetta.exe。\n2. 在浏览器中的设置填写自己的接口、API Key 和模型。\n3. 不需要安装 Node.js、uv、Python；模型和字体已包含。\n4. 关闭浏览器不会停止服务，在启动窗口或托盘中选择退出。\n\n配置、缓存和临时文件保存在 data；译本默认保存到用户目录的 PDF译文，可在设置中修改。\n移动整个文件夹时先退出应用，更新时保留自己的 data 文件夹；不要分享含 API Key 的 data/settings.env。\n翻译需要联网并使用你自己的模型服务，费用由服务商收取。\n\n源码、第三方源码和许可均随包提供，更多说明见 source/docs/portable-release.md。\n',encoding='utf-8-sig')
+    run([csc,'/nologo','/target:winexe','/platform:x64','/optimize+',f'/out:{output / "Rosetta.exe"}',f'/win32icon:{ROOT / "assets/desktop/reader.ico"}',f'/resource:{defaults},Rosetta.DefaultSettings.env','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.Web.Extensions.dll',ROOT/'scripts/portable/Launcher.cs'])
+    (output/'开始使用.txt').write_text('Rosetta · 译读（Windows 10/11 x64 完整便携版）\n\n1. 将整个压缩包解压到可写文件夹，双击 Rosetta.exe。\n2. 在浏览器中的设置填写自己的接口、API Key 和模型。\n3. 不需要安装 Node.js、uv、Python；模型和字体已包含。\n4. 关闭浏览器不会停止服务，在启动窗口或托盘中选择退出。\n\n应用配置只读写 data/settings.env，首次启动自动创建；根目录 .env 不会被读取，也无需 .env.example。\n缓存和临时文件也保存在 data；译本默认保存到用户目录的 PDF译文，可在设置中修改。\n移动整个文件夹时先退出应用，更新时保留自己的 data 文件夹；不要分享含 API Key 的 data/settings.env。\n翻译需要联网并使用你自己的模型服务，费用由服务商收取。\n\n源码、第三方源码和许可均随包提供，更多说明见 source/docs/portable-release.md。\n',encoding='utf-8-sig')
     (output/'licenses/PORTABLE-NOTICES.md').write_text('''# Portable distribution notices
 
 Original project: GNU AGPL-3.0-only. Complete project source and build scripts are in ../source/.
