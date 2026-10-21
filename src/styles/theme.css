@@ -88,8 +88,11 @@ button, input { -webkit-tap-highlight-color: transparent; }
 /* The PDF canvas and text layer retain PDF.js coordinates. */
 .viewer { position: relative; flex: 1; overflow: auto; background: #111814; }
 .viewer__inner { position: relative; width: 100%; }
-.pdf-page { position: absolute; background: #fff; box-shadow: 0 4px 24px #0005; overflow: hidden; isolation: isolate; }
-.pdf-canvas { position: absolute; top: 0; left: 0; display: block; }
+.pdf-page { position: absolute; background: var(--bg-1); box-shadow: 0 4px 24px #0005; overflow: hidden; isolation: isolate; }
+.pdf-canvas, .pdf-preview { position: absolute; top: 0; left: 0; display: block; width: 100%; height: 100%; }
+.pdf-page:not([data-visual])::after { content: "页面正在加载…"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); font-size: 12px; }
+.pdf-page[data-render-error]:not([data-visual])::after { content: "页面加载失败"; }
+.pdf-page[data-stale] .textLayer { visibility: hidden; pointer-events: none; }
 .pdf-tint { position: absolute; inset: 0; z-index: 0; pointer-events: none; background: var(--page-tint, transparent); mix-blend-mode: multiply; }
 .textLayer ::selection, .textLayer ::-moz-selection { background: rgb(100 155 115 / .4); color: transparent; }
 .drop-active { outline: 2px dashed var(--accent); outline-offset: -12px; }

@@ -6,6 +6,7 @@ import { loadOutline, type OutlineNode } from '../lib/outline'
 import type { DocInfo, SelectionPayload } from '../types'
 import { HighlightHistory, highlightFromQuads, containsHighlight, type Highlight } from '../lib/highlights'
 import { pickSavePdf, downloadPdf, type PdfFileHandle } from '../lib/fileAccess'
+import { pageRenderPlan, rasterEvictions, PREVIEW_CACHE_BYTES, PREVIEW_CACHE_PAGES } from '../lib/pageRenderCache'
 import AppIcon from './AppIcon.vue'
 
 const props = withDefaults(defineProps<{ scale: number; tint: string; navigation?: boolean; tool?: 'select' | 'highlight' | 'erase' }>(), { navigation: true, tool: 'select' })
@@ -28,8 +29,8 @@ const emit = defineEmits<{
 /** 页面之间与四周的留白 */
 const PAD = 20
 const GAP = 18
-/** 视口上下各多渲染这么多像素，滚动时不会看到空白 */
-const OVERSCAN = 800
+/** Two renders at a time; retained canvases and small previews cover rapid direction changes. */
+const MAX_RENDER_TASKS = 2
 
 const scrollEl = ref<HTMLDivElement | null>(null)
 const doc = shallowRef<PDFDocumentProxy | null>(null)
@@ -52,6 +53,11 @@ interface PageRuntime {
   layer: { cancel: () => void } | null
   /** 丢弃页面时自增，用来作废仍在飞行中的渲染结果 */
   gen: number
+  canvas: HTMLCanvasElement | null
+  scale: number
+  bytes: number
+  lastUsed: number
+  pendingLayer: { cancel: () => void } | null
 }
 
 const runtimes = new Map<number, PageRuntime>()
@@ -59,7 +65,7 @@ const runtimes = new Map<number, PageRuntime>()
 function rt(n: number): PageRuntime {
   let r = runtimes.get(n)
   if (!r) {
-    r = { el: null, rendered: false, rendering: false, task: null, layer: null, gen: 0 }
+    r = { el: null, rendered: false, rendering: false, task: null, layer: null, gen: 0, canvas: null, scale: 0, bytes: 0, lastUsed: 0, pendingLayer: null }
     runtimes.set(n, r)
   }
   return r
@@ -113,142 +119,188 @@ function bindPage(n: number, el: unknown) {
   rt(n).el = (el as HTMLElement | null) ?? null
 }
 
-// ---------------- 渲染 ----------------
+// ---------------- Rendering with retained surfaces ----------------
+interface Preview { canvas: HTMLCanvasElement; bytes: number }
+const previews = new Map<number, Preview>()
+let lastUse = 0
+let activeRenders = 0
+let renderQueue: number[] = []
+let wantedPages = new Set<number>()
+let visiblePages = new Set<number>()
+let lastScrollTop = 0
+let scrollMotion = 0
+let destroyed = false
 
-async function renderPage(n: number) {
-  const d = doc.value
+function cancelRender(r: PageRuntime) {
+  r.gen++
+  try { r.task?.cancel() } catch { /* already finished */ }
+  try { r.pendingLayer?.cancel() } catch { /* already finished */ }
+  r.task = null; r.pendingLayer = null; r.rendering = false
+}
+function clearPreview(n: number) {
+  const preview = previews.get(n)
+  if (!preview) return
+  if (preview.canvas.parentElement) preview.canvas.remove()
+  preview.canvas.width = preview.canvas.height = 0
+  previews.delete(n)
+}
+function trimPreviews() {
+  let bytes = [...previews.values()].reduce((total, p) => total + p.bytes, 0)
+  for (const [n, p] of previews) {
+    if (previews.size <= PREVIEW_CACHE_PAGES && bytes <= PREVIEW_CACHE_BYTES) break
+    if (visiblePages.has(n)) continue
+    bytes -= p.bytes; clearPreview(n)
+    const r = runtimes.get(n)
+    if (r?.el && !r.canvas) delete r.el.dataset.visual
+  }
+}
+function keepPreview(n: number, canvas: HTMLCanvasElement) {
+  clearPreview(n)
+  const ratio = Math.min(1, 320 / canvas.width, 420 / canvas.height)
+  const preview = document.createElement('canvas')
+  preview.width = Math.max(1, Math.round(canvas.width * ratio)); preview.height = Math.max(1, Math.round(canvas.height * ratio))
+  preview.className = 'pdf-preview'
+  preview.getContext('2d')?.drawImage(canvas, 0, 0, preview.width, preview.height)
+  previews.set(n, { canvas: preview, bytes: preview.width * preview.height * 4 })
+  return preview
+}
+function evictRaster(n: number) {
   const r = runtimes.get(n)
-  if (!d || !r || !r.el || r.rendered || r.rendering) return
-
-  const gen = r.gen
+  if (!r?.canvas || r.rendering) return
+  const preview = keepPreview(n, r.canvas)
+  try { r.layer?.cancel() } catch { /* already finished */ }
+  r.layer = null
+  const tint = document.createElement('div'); tint.className = 'pdf-tint'
+  r.el?.replaceChildren(preview, tint)
+  if (r.el) { r.el.dataset.visual = 'preview'; delete r.el.dataset.stale }
+  r.canvas.width = r.canvas.height = 0
+  r.canvas = null; r.bytes = 0; r.rendered = false
+  const d = doc.value
+  if (d) void d.getPage(n).then(page => {
+    if (doc.value === d && !r.canvas && !r.rendering) page.cleanup()
+  }).catch(() => { /* document may have closed */ })
+}
+function trimRasterCache() {
+  const protectedPages = new Set(visiblePages)
+  const entries = []
+  for (const [n, r] of runtimes) {
+    if (r.rendering) protectedPages.add(n)
+    if (r.canvas) entries.push({ pageNumber: n, bytes: r.bytes, lastUsed: r.lastUsed })
+  }
+  for (const n of rasterEvictions(entries, protectedPages)) evictRaster(n)
+  trimPreviews()
+}
+/** Invalidating an image never removes the image currently on screen. */
+function invalidatePage(n: number) {
+  const r = runtimes.get(n)
+  if (!r) return
+  cancelRender(r); r.rendered = false
+  if (r.el) {
+    delete r.el.dataset.renderError
+    if (r.scale !== props.scale) r.el.dataset.stale = 'true'
+  }
+}
+async function renderPage(n: number) {
+  const d = doc.value, r = runtimes.get(n)
+  if (!d || !r?.el || r.rendered || r.rendering) return
+  const gen = r.gen, scale = props.scale
   r.rendering = true
+  let nextLayer: { cancel: () => void } | null = null
+  let canvas: HTMLCanvasElement | null = null
   try {
     const page = await d.getPage(n)
-    if (r.gen !== gen || !r.el.isConnected) return
-
-    const viewport = page.getViewport({ scale: props.scale })
-    pageViewports.set(n, viewport)
-    // 按设备像素比出图，保证文字清晰；上限 2 是防止 4K 屏下 canvas 过大
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    const canvas = document.createElement('canvas')
-    canvas.className = 'pdf-canvas'
-    canvas.width = Math.floor(viewport.width * dpr)
-    canvas.height = Math.floor(viewport.height * dpr)
-    canvas.style.width = `${Math.floor(viewport.width)}px`
-    canvas.style.height = `${Math.floor(viewport.height)}px`
-
-    const task = page.render({
-      canvas,
-      viewport,
-      annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE,
-      transform: [dpr, 0, 0, dpr, 0, 0]
-    })
+    if (r.gen !== gen || doc.value !== d || !r.el.isConnected) return
+    const viewport = page.getViewport({ scale })
+    const dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(12000000 / (viewport.width * viewport.height)))
+    canvas = document.createElement('canvas'); canvas.className = 'pdf-canvas'
+    canvas.width = Math.max(1, Math.floor(viewport.width * dpr)); canvas.height = Math.max(1, Math.floor(viewport.height * dpr))
+    const task = page.render({ canvas, viewport, annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE, transform: [dpr, 0, 0, dpr, 0, 0] })
     r.task = task
     await task.promise
-    if (r.gen !== gen || !r.el.isConnected) return
-
-    const textDiv = document.createElement('div')
-    textDiv.className = 'textLayer'
-    const layer = new pdfjsLib.TextLayer({
-      textContentSource: page.streamTextContent(),
-      container: textDiv,
-      viewport
-    })
-    r.layer = layer
-    await layer.render()
-    if (r.gen !== gen || !r.el.isConnected) return
-
-    // 护眼蒙版夹在 canvas 与文字层之间：
-    // 用 multiply 混合，白底被染成目标色、黑字仍是黑字，对比度不被冲淡；
-    // 文字层在它上面，所以划选高亮不受影响；pointer-events:none 不挡鼠标。
-    const tintDiv = document.createElement('div')
-    tintDiv.className = 'pdf-tint'
-
+    if (r.gen !== gen || doc.value !== d || !r.el.isConnected) return
+    const existingText = r.scale === scale ? r.el.querySelector('.textLayer') : null
+    let textDiv: Element
+    if (existingText) textDiv = existingText
+    else {
+      textDiv = document.createElement('div'); textDiv.className = 'textLayer'
+      nextLayer = new pdfjsLib.TextLayer({ textContentSource: page.streamTextContent(), container: textDiv as HTMLDivElement, viewport })
+      r.pendingLayer = nextLayer
+      await (nextLayer as InstanceType<typeof pdfjsLib.TextLayer>).render()
+    }
     await loadPageHighlights(n)
-    if (r.gen !== gen || !r.el.isConnected) return
+    if (r.gen !== gen || doc.value !== d || !r.el.isConnected) return
+    const previousCanvas = r.canvas
+    const tintDiv = document.createElement('div'); tintDiv.className = 'pdf-tint'
+    // One synchronous commit: old pixels stay visible until both image and text are ready.
     r.el.replaceChildren(canvas, tintDiv, textDiv)
-    r.rendered = true
+    if (nextLayer) { try { r.layer?.cancel() } catch { /* already finished */ }; r.layer = nextLayer }
+    r.canvas = canvas; r.bytes = canvas.width * canvas.height * 4; r.scale = scale
+    r.lastUsed = ++lastUse; r.rendered = true
+    r.el.dataset.visual = 'full'; delete r.el.dataset.stale
+    pageViewports.set(n, viewport)
+    clearPreview(n)
+    if (previousCanvas) previousCanvas.width = previousCanvas.height = 0
+    canvas = null; nextLayer = null
   } catch (err) {
     const name = (err as { name?: string } | null)?.name
     if (r.gen === gen && doc.value === d && name !== 'RenderingCancelledException' && name !== 'AbortException') {
+      r.el.dataset.renderError = 'true'
       emit('error', `第 ${n} 页渲染失败：${(err as Error)?.message ?? String(err)}`)
     }
   } finally {
-    if (r.gen === gen) r.rendering = false
+    if (canvas) canvas.width = canvas.height = 0
+    try { nextLayer?.cancel() } catch { /* cancelled render */ }
+    if (r.gen === gen) { r.rendering = false; r.task = null; r.pendingLayer = null }
+    trimRasterCache()
   }
 }
-
-async function dropPage(n: number) {
-  const r = runtimes.get(n)
-  if (!r) return
-  r.gen++
-  try {
-    r.task?.cancel()
-  } catch {
-    /* 取消已结束的任务会抛，忽略 */
+function pumpRenders() {
+  if (destroyed) return
+  while (activeRenders < MAX_RENDER_TASKS && renderQueue.length) {
+    const n = renderQueue.shift()!, r = runtimes.get(n)
+    if (!wantedPages.has(n) || !r?.el || r.rendered || r.rendering || r.el.dataset.renderError) continue
+    activeRenders++
+    void renderPage(n).finally(() => { activeRenders--; pumpRenders() })
   }
-  try {
-    r.layer?.cancel()
-  } catch {
-    /* 同上 */
-  }
-  r.task = null
-  r.layer = null
-  r.rendered = false
-  r.rendering = false
-  r.el?.replaceChildren()
 }
-
 function dropAll() {
-  for (const n of [...runtimes.keys()]) void dropPage(n)
-}
-
-// ---------------- 可视区计算 ----------------
-
-function currentPageFromScroll(scrollTop: number, clientHeight: number) {
-  const l = layout.value
-  if (l.length === 0) return 1
-  const probe = scrollTop + clientHeight * 0.3
-  let page = 1
-  for (const p of l) {
-    if (p.top <= probe) page = p.pageNumber
-    else break
+  renderQueue = []; wantedPages.clear(); visiblePages.clear()
+  for (const r of runtimes.values()) {
+    cancelRender(r)
+    try { r.layer?.cancel() } catch { /* already finished */ }
+    r.layer = null; r.el?.replaceChildren()
+    if (r.el) { delete r.el.dataset.visual; delete r.el.dataset.stale; delete r.el.dataset.renderError }
+    if (r.canvas) r.canvas.width = r.canvas.height = 0
+    r.canvas = null; r.bytes = 0; r.rendered = false
   }
+  for (const n of [...previews.keys()]) clearPreview(n)
+}
+function currentPageFromScroll(scrollTop: number, clientHeight: number) {
+  let page = 1
+  const probe = scrollTop + clientHeight * 0.3
+  for (const p of layout.value) { if (p.top <= probe) page = p.pageNumber; else break }
   return page
 }
-
 function updateVisible() {
   const el = scrollEl.value
-  if (!el || layout.value.length === 0) return
-
-  const top = el.scrollTop
-  const lo = top - OVERSCAN
-  const hi = top + el.clientHeight + OVERSCAN
-
-  for (const p of layout.value) {
-    const r = runtimes.get(p.pageNumber)
-    const inRange = p.top + p.height > lo && p.top < hi
-    if (inRange) {
-      if (!r || (!r.rendered && !r.rendering)) void renderPage(p.pageNumber)
-    } else if (r && (r.rendered || r.rendering)) {
-      void dropPage(p.pageNumber)
-    }
+  if (!el || el.clientHeight <= 0 || !layout.value.length) return
+  const plan = pageRenderPlan(layout.value, el.scrollTop, el.clientHeight, scrollMotion)
+  visiblePages = plan.visible; wantedPages = new Set(plan.wanted)
+  for (const [n, r] of runtimes) {
+    if (visiblePages.has(n)) r.lastUsed = ++lastUse
+    if (!wantedPages.has(n) && r.rendering) cancelRender(r)
   }
-
-  const page = currentPageFromScroll(top, el.clientHeight)
-  if (page !== currentPage.value) {
-    currentPage.value = page
-    emit('page-change', page)
-  }
+  renderQueue = plan.wanted.filter(n => { const r = runtimes.get(n); return r && !r.rendered && !r.rendering })
+  trimRasterCache(); pumpRenders()
+  const page = currentPageFromScroll(el.scrollTop, el.clientHeight)
+  if (page !== currentPage.value) { currentPage.value = page; emit('page-change', page) }
 }
-
 let rafId = 0
 function onScroll() {
+  const top = scrollEl.value?.scrollTop ?? 0
+  scrollMotion = top - lastScrollTop; lastScrollTop = top
   if (rafId) return
-  rafId = requestAnimationFrame(() => {
-    rafId = 0
-    updateVisible()
-  })
+  rafId = requestAnimationFrame(() => { rafId = 0; updateVisible() })
 }
 
 // ---------------- 选区捕获 ----------------
@@ -325,6 +377,7 @@ function captureSelection(force = false) {
 const history = new HighlightHistory()
 const existingHighlights = new Map<number, Highlight[]>()
 const storageKeys = new Set<string>()
+let appliedEdits = new Map<string, Highlight>()
 let sourceFile: File | null = null
 let fileHandle: PdfFileHandle | null = null
 let saving = false
@@ -351,8 +404,16 @@ function syncEdits() {
     d.annotationStorage.setValue(key, annotation)
     storageKeys.add(key)
   }
-  // Re-render from annotation storage, including deletions of existing highlights.
-  dropAll(); updateVisible(); emitEditState()
+  const changedPages = new Set<number>()
+  for (const key of new Set([...appliedEdits.keys(), ...history.edits.keys()])) {
+    const before = appliedEdits.get(key), after = history.edits.get(key)
+    if (before === after) continue
+    if (before) changedPages.add(before.pageIndex + 1)
+    if (after) changedPages.add(after.pageIndex + 1)
+  }
+  appliedEdits = new Map(history.edits)
+  for (const n of changedPages) invalidatePage(n)
+  updateVisible(); emitEditState()
 }
 function addSelectionHighlights() {
   const selection = window.getSelection(), d = doc.value
@@ -360,7 +421,7 @@ function addSelectionHighlights() {
   const selected = selection.getRangeAt(0)
   const updates: Highlight[] = []
   for (const [pageNumber, r] of runtimes) {
-    if (!r.el || !r.rendered || !selected.intersectsNode(r.el)) continue
+    if (!r.el || !r.canvas || r.scale !== props.scale || !selected.intersectsNode(r.el)) continue
     const quads: number[][] = []
     const box = r.el.getBoundingClientRect()
     const viewport = pageViewports.get(pageNumber)
@@ -470,7 +531,7 @@ async function openFile(file: File, handle?: PdfFileHandle) {
     const vp1 = p1.getViewport({ scale: 1 })
 
     dropAll()
-    history.clear(); existingHighlights.clear(); storageKeys.clear(); pageViewports.clear()
+    history.clear(); appliedEdits.clear(); existingHighlights.clear(); storageKeys.clear(); pageViewports.clear()
     sourceFile = file; fileHandle = handle ?? null
     emitEditState()
     runtimes.clear()
@@ -484,6 +545,7 @@ async function openFile(file: File, handle?: PdfFileHandle) {
     sizes.set(1, { w: vp1.width, h: vp1.height })
 
     currentPage.value = 1
+    lastScrollTop = 0; scrollMotion = 0
     await nextTick()
     if (generation !== openGeneration) return
     if (scrollEl.value) scrollEl.value.scrollTop = 0
@@ -523,7 +585,7 @@ async function probeSizes(d: PDFDocumentProxy) {
       const page = await d.getPage(i)
       const vp = page.getViewport({ scale: 1 })
       sizes.set(i, { w: vp.width, h: vp.height })
-      if (!runtimes.get(i)?.rendered) page.cleanup()
+      // The render queue owns page lifetime; metadata probing must not clean an in-flight page.
     } catch {
       /* 个别页取不到就沿用第一页尺寸 */
     }
@@ -559,6 +621,7 @@ onMounted(() => {
     viewportWidth.value = el.clientWidth
     ro = new ResizeObserver(() => {
       viewportWidth.value = el.clientWidth
+      updateVisible()
     })
     ro.observe(el)
   }
@@ -567,6 +630,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  destroyed = true
+  cancelAnimationFrame(rafId)
   openGeneration++
   void pendingLoad?.destroy()
   ro?.disconnect()
@@ -592,7 +657,7 @@ watch(
       oldTop += Math.round((sizes.get(page)?.h ?? fallback.value?.h ?? 0) * previousScale) + GAP
     }
     const offset = (el?.scrollTop ?? 0) - oldTop
-    dropAll()
+    for (const n of runtimes.keys()) invalidatePage(n)
     await nextTick()
     if (generation !== scaleGeneration || document !== doc.value) return
     const target = layout.value.find(page => page.pageNumber === anchor)
